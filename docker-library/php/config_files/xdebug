@@ -1,0 +1,128 @@
+#!/bin/bash 
+set -e
+
+[ "$DEBUG" == 'true' ] && set -x
+
+readonly PROGNAME=$(basename $0)
+readonly ARGS="$*"
+
+
+readonly PHP_ETC=/usr/local/etc/php
+
+readonly PHP_ETC_XDEBUG=$PHP_ETC/mods-available/docker-php-ext-xdebug.ini
+readonly PHP_ETC_LINK=$PHP_ETC/conf.d/docker-php-ext-xdebug.ini
+
+is_file() {
+  local file=$1
+  [[ -f $file ]]
+}
+
+usage() {
+	cat <<- EOF
+	Usage: $PROGNAME [options]
+	
+	Auto enable or disable Xdebug PHP extension for CLI and FPM contexts
+	OR 
+	Run your PHP CLI script with xdebug enabled
+	
+	OPTIONS
+	--force-activate
+	--force-deactivate
+	[php_file] : runs .php file with xdebug activated
+	[By default no option] : autoguess to enable or disable xdebug extension
+	
+	EXAMPLES
+	xdebug                    # Auto enable or disable 
+	xdebug --force-activate   # Force enable
+	xdebug /dir/test.php      # Runs : XDEBUG_CONFIG="idekey=${XDEBUG_IDKEY}" php "/dir/test.php"
+
+	EOF
+}
+
+# set xdebug.remote_host in xdebug.ini
+# set env var to overload xdebug.idekey
+set_xdebug_ini() {
+  local IPGATEWAY
+  local UNAME
+  UNAME=$(uname -a)
+
+  export XDEBUG_CONFIG="idekey=${XDEBUG_IDKEY}"
+
+  if [[ $UNAME =~ "boot2docker" ]]; then
+    export PHP_IDE_CONFIG="serverName=localdev"
+    IPGATEWAY="192.168.10.1"
+  elif [[ $UNAME =~ "microsoft" ]]; then
+    export PHP_IDE_CONFIG="serverName=localdev"
+    IPGATEWAY="host.docker.internal"
+  elif [[ $UNAME =~ "linuxkit" ]]; then
+    IPGATEWAY="docker.for.mac.localhost"
+  else
+    IPGATEWAY=$(ip route | awk '/default/{print $3}')
+  fi
+
+  sudo sed -e "s/IPGATEWAY/$IPGATEWAY/" -i "$PHP_ETC_XDEBUG"
+  sudo sed -e "s/IDKEY/$XDEBUG_IDKEY/" -i "$PHP_ETC_XDEBUG"
+}
+
+enable_xdebug() {
+  set_xdebug_ini
+
+  # set symlinks
+  sudo rm -f "$PHP_ETC_LINK"
+  sudo ln -s "$PHP_ETC_XDEBUG" "$PHP_ETC_LINK"
+
+  # reload fpm php service
+  sudo -- sh -c "kill -USR2 40" > /dev/null 2>&1
+}
+
+disable_xdebug() {
+  # remove symlinks
+  sudo rm -f "$PHP_ETC_LINK"
+
+  # reload fpm php service
+  sudo -- sh -c "kill -USR2 40" > /dev/null 2>&1
+}
+
+main() {
+
+  # Run cli script with xdebug activated
+  if [[ -n $1 ]] && is_file "$1"
+  then
+    enable_xdebug
+    php $ARGS
+    disable_xdebug
+
+  # Get some help
+  elif [ "$ARGS" = "help" ] || [ "$ARGS" = "--help" ] || [ "$ARGS" = "-h" ]
+  then
+    usage
+
+  # Force xdebug enable
+  elif [ "$ARGS" = "--force-activate" ]
+  then
+    enable_xdebug
+    echo "Xdebug enabled (forced)"
+
+  # Force xdebug disable
+  elif [ "$ARGS" = "--force-deactivate" ]
+  then
+    disable_xdebug
+    echo "Xdebug disabled (forced)"
+
+  # Autodetect what to do : enable or disable xdebug
+  else
+
+    if is_file "$PHP_ETC_LINK";
+    then      
+      disable_xdebug
+      echo "Xdebug disabled"
+    else
+      enable_xdebug
+      echo "Xdebug enabled"
+    fi
+
+  fi
+
+}
+
+main $ARGS

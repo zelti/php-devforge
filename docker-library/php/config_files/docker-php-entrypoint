@@ -1,0 +1,65 @@
+#!/bin/bash -
+set -e
+
+HOMEDIR="/home/php-devforge"
+BASHRC_PHP_DEVFORGE="/usr/local/php-devforge/bashrc"
+
+# Bashrc profile 
+for f in $HOME/.bashrc; do
+  if ! grep -Fxq "### CUSTOM PHP-DEVFORGE BLOCK ###" "$f"; then
+    echo -e '\n### CUSTOM PHP-DEVFORGE BLOCK ###'                             >> "$f"
+    echo 'if [ -f "'$BASHRC_PHP_DEVFORGE'" ]; then'                           >> "$f"
+    echo '  . "'$BASHRC_PHP_DEVFORGE'"'                                       >> "$f"
+    echo 'fi'                                                            >> "$f"
+    echo '### END CUSTOM PHP-DEVFORGE BLOCK ###'                              >> "$f"
+  fi
+done
+
+if command -v sudo >/dev/null 2>&1; then
+  if ! grep -Fxq "### CUSTOM PHP-DEVFORGE BLOCK ###" /root/.bashrc 2>/dev/null; then
+    sudo sh -c "echo -e '\n### CUSTOM PHP-DEVFORGE BLOCK ###' >> /root/.bashrc"
+    sudo sh -c "echo 'if [ -f \"$BASHRC_PHP_DEVFORGE\" ]; then' >> /root/.bashrc"
+    sudo sh -c "echo '  . \"$BASHRC_PHP_DEVFORGE\"' >> /root/.bashrc"
+    sudo sh -c "echo 'fi' >> /root/.bashrc"
+    sudo sh -c "echo '### END CUSTOM PHP-DEVFORGE BLOCK ###' >> /root/.bashrc"
+  fi
+fi
+
+if [ "$PHP_XDEBUG" == "yes" ] ; then
+  /usr/local/bin/xdebug --force-activate
+fi
+
+# if [ "$PHP_XDEBUG" == "no" ] ; then
+#   /usr/local/bin/xdebug --force-deactivate
+# fi
+
+if [ -s $HOMEDIR/script/cron_php-devforge ]; then
+    chown php-devforge:www-data $HOMEDIR/script/cron_php-devforge
+    crontab -u www-data $HOMEDIR/script/cron_php-devforge
+fi
+
+if [ ! -d "/run/php/" ]; then
+  sudo mkdir -p "/run/php"
+  sudo chown php-devforge:www-data "/run/php"
+fi
+
+# create public_html folder if not present
+if [ ! -d "$HOMEDIR/public_html" ]; then
+  mkdir -p "$HOMEDIR/public_html"
+  sudo chown -R php-devforge:www-data $HOMEDIR
+fi
+
+sudo rm /run/cron* -f
+sudo /usr/sbin/cron
+
+# first arg is `-f` or `--some-option`
+if [ "${1#-}" != "$1" ]; then
+	set -- php-fpm "$@"
+fi
+
+# Si no es root, usar sudo
+if [ "$(id -u)" -ne 0 ]; then
+	exec sudo "$@"
+else
+	exec "$@"
+fi

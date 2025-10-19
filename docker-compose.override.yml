@@ -1,0 +1,51 @@
+services:
+  postgres16dev:
+    image: postgres:16
+    shm_size: 1gb
+    ports:
+      - 127.0.0.1:5439:5432
+    container_name: postgres16dev
+    hostname: ${USERNAME}-postgres16dev
+    volumes:
+      - datapostgres16dev:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=${USER_DEV}
+      - POSTGRES_PASSWORD=${PASSWD_DEV}
+
+  # es8143dev:
+  #   image: docker.elastic.co/elasticsearch/elasticsearch:8.14.2
+  #   volumes:
+  #     - dataes8143dev:/usr/share/elasticsearch/data
+
+  #   container_name: es8143dev
+  #   hostname: ${USERNAME}-es8143dev
+  #   environment:
+  #     - bootstrap.memory_lock=true
+  #     - "ES_JAVA_OPTS=-Xms1024m -Xmx1024m"
+  #     - "discovery.type=single-node"
+  #     - cluster.routing.allocation.disk.watermark.low=95%
+  #     - cluster.routing.allocation.disk.watermark.high=97%
+  #     - cluster.routing.allocation.disk.watermark.flood_stage=98%
+  #     - cluster.info.update.interval=1m
+  #     - xpack.security.enabled=false
+  #   ulimits:
+  #     memlock:
+  #       soft: -1
+  #       hard: -1
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2048M
+
+  # kibana:
+  #   image: docker.elastic.co/kibana/kibana:8.14.2
+  #   environment:
+  #     SERVER_NAME: kibana.dev.local
+  #     ELASTICSEARCH_HOSTS: http://es8143dev:9200
+  #   ports:
+  #     - 127.0.0.1:5601:5601
+
+volumes:
+  datapostgres16dev:
+  #dataes8143dev:

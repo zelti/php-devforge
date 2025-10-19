@@ -1,0 +1,105 @@
+name: php-devforge
+
+x-logging: &json-logging
+  options:
+    max-size: "10m"
+    max-file: "2"
+  driver: "json-file"
+
+x-phpconfig_default: &phpconfig_default
+  volumes:
+    - dataphp-devforge:/home/php-devforge
+    - /home/php-devforge/public_html:/home/php-devforge/public_html
+  environment:
+    - PHP_XDEBUG=${XDEBUG_ENABLE}
+    - XDEBUG_IDKEY=${XDEBUG_IDKEY}
+  logging: *json-logging
+
+services:
+  dnsmasq:
+    image: andyshinn/dnsmasq
+    container_name: dnsmasq
+    ports:
+      - "53:53/udp"
+    command: --address=/${DEV_DOMAIN}/127.0.0.1 --local=/${DEV_DOMAIN}/
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+
+  apachedev:
+    build: ./docker-library/httpd
+    image: php-devforge/apache:dev
+    ports:
+      - 80:80
+      - 443:443
+    depends_on:
+      - php${PHP_VERSION}dev
+      - dnsmasq
+    volumes:
+      - dataphp-devforge:/home/php-devforge:ro
+      - ./certificates:/etc/apache2/ssl/:ro
+      - /home/php-devforge/public_html:/home/php-devforge/public_html
+    container_name: apachedev
+    hostname: ${USERNAME}-apachedev
+    environment:
+      - PHP_VERSION=${PHP_VERSION}
+      - DEV_DOMAIN=${DEV_DOMAIN}
+    logging: *json-logging
+    healthcheck:
+      test: curl --fail http://localhost || exit 1
+      interval: 30s
+      retries: 5
+      start_period: 10s
+      timeout: 10s
+
+  # nginxdev:
+  #   build: ./docker-library/nginx
+  #   image: local/nginx:dev
+  #   container_name: nginx-dev
+  #   hostname: ${USERNAME}-nginx
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./certificates:/etc/nginx/ssl/:ro
+  #     - dataphp-devforge:/home/php-devforge:ro
+  #   environment:
+  #     - DEV_DOMAIN=${DEV_DOMAIN}
+  #     - PHP_VERSION=${PHP_VERSION}
+  #   depends_on:
+  #     - php${PHP_VERSION}dev
+  #   logging: *json-logging
+  #   healthcheck:
+  #     test: curl --fail http://localhost || exit 1
+  #     interval: 30s
+  #     retries: 5
+  #     start_period: 10s
+  #     timeout: 10s
+
+  php83dev:
+    image: php-devforge/php:8.3-dev
+    container_name: php83dev
+    hostname: ${USERNAME}-php83dev
+    build:
+      context: ./docker-library/php
+      dockerfile: ./docker-library/php/8.3
+    <<: *phpconfig_default
+
+  php84dev:
+    image: php-devforge/php:8.4-dev
+    container_name: php84dev
+    hostname: ${USERNAME}-php84dev
+    build:
+      context: ./docker-library/php
+      dockerfile: ./docker-library/php/8.4
+    <<: *phpconfig_default
+
+volumes:
+  dataphp-devforge:
+
+networks:
+  default:
+    name: php-devforge_default
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24

@@ -1,9 +1,16 @@
-FROM php:8.4-fpm
+# One Dockerfile for every PHP version. The tag comes from docker-compose.yml
+# (build.args), so adding a version means adding a service, not copying this file.
+#
+# Named PHP_TAG, not PHP_VERSION: the official php image already sets PHP_VERSION
+# inside the container (to the full 8.4.24), and .env uses PHP_VERSION for the
+# short default selector (84). Three different meanings, so this one gets its own name.
+ARG PHP_TAG=8.4
+FROM php:${PHP_TAG}-fpm
 LABEL maintainer="Yostin Vargas"
 
-ARG PHP_VERSION=8.4
 ARG NVM_DIR=/usr/local/nvm
-ARG NODE_VERSION=19
+ARG NODE_VERSION=24
+ARG PNPM_VERSION=latest
 ARG PHP_XDEBUG=no
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -71,11 +78,13 @@ RUN git clone https://github.com/nvm-sh/nvm.git ${NVM_DIR} \
     && echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /etc/profile.d/nvm.sh \
     && chmod +x /etc/profile.d/nvm.sh
 
-# Instalar Node 19 usando NVM
+# Node via nvm, plus pnpm. npm ships with Node and cannot be removed;
+# pnpm is installed alongside it and is the one to prefer.
 RUN . /etc/profile.d/nvm.sh \
     && nvm install ${NODE_VERSION} \
     && nvm alias default ${NODE_VERSION} \
     && nvm use default \
+    && npm install -g pnpm@${PNPM_VERSION} \
     && chown -R php-devforge:www-data ${NVM_DIR} 
 
 # Configuración de vim y scripts

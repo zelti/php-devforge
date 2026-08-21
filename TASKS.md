@@ -307,12 +307,53 @@ Options (**none chosen yet**):
 
 ## 🟡 Quality and maintenance
 
-- [ ] **9. Node 19 is end-of-life** (support ended June 2023) → move to 22 or 24 LTS.
-      Files: `docker-library/php/8.3/Dockerfile:6`, `8.4/Dockerfile:6`
+- [x] **9. Node 19 is end-of-life** — FIXED
+      Node 19 was never LTS and lost support in June 2023, three years without security
+      patches. Checked nodejs.org rather than guessing: Node 24 (Krypton) is the current
+      LTS, last release 2026-08-03. Node 20 is now out of support too.
+      → `NODE_VERSION=24`, and it is now exposed in `.env` and passed through
+      `docker-compose.yml` as a build arg, the same way `PHP_VERSION` is — so changing it
+      no longer means editing the Dockerfile.
+      → **pnpm added** (`npm install -g pnpm@${PNPM_VERSION}`, default `latest`). npm ships
+      inside Node and cannot be removed, so `config_files/bashrc` defines an `npm` shell
+      function that prints `→ this project prefers pnpm: pnpm <args>` to stderr and then
+      runs the real npm. It nudges without breaking anything, and only in interactive
+      shells, so scripts and tooling are unaffected.
+      Verified: `node v24.19.0`, `npm v11.17.0`, `pnpm v11.22.0`, nudge shows on use.
 
-- [ ] **10. The two PHP Dockerfiles are byte-identical** apart from the `FROM` line and
-      the `PHP_VERSION` arg. Every change has to be made twice.
-      → One Dockerfile driven by a build arg.
+      **Still worth doing:** the Dockerfile clones nvm from its main branch and checks out
+      the latest tag, so builds are not reproducible — an nvm change could break the image
+      without anything here changing. Pinning the nvm version would fix it.
+
+- [x] **10. The two PHP Dockerfiles are byte-identical** — FIXED
+      97 lines each, differing in exactly two lines: the `FROM` and an
+      `ARG PHP_VERSION` that **was never used anywhere in the file**. So the only real
+      difference was the base image.
+      → One `docker-library/php/Dockerfile` with `ARG PHP_VERSION` declared before `FROM`,
+      and the version supplied per service from `docker-compose.yml` (`build.args`).
+      194 lines → 97. Both `8.3/` and `8.4/` deleted.
+      Verified by building both from scratch: `php83dev` → PHP 8.3.33,
+      `php84dev` → PHP 8.4.24, and both sites still serve over HTTPS.
+
+      **Adding PHP 8.5 is now one service block in compose** — no new Dockerfile, and no
+      vhost change either, since routing became dynamic in task 20.
+
+      **Build arg named `PHP_TAG`, not `PHP_VERSION`.** The user spotted that `.env` holds
+      `PHP_VERSION=84` while the image tag needs `8.4`, and asked how that resolved — a
+      fair question, because `php:84-fpm` does not exist. It worked only because compose
+      hardcodes `"8.4"` in `build.args`, independently of `.env`. Three things carried the
+      same name:
+
+      | Name | Value | Meaning | Where |
+      |---|---|---|---|
+      | `PHP_VERSION` | `84` | default version for sites | `.env`, apachedev |
+      | `PHP_TAG` | `8.3` / `8.4` | base image tag | build args |
+      | `PHP_VERSION` | `8.4.24` | real PHP version | inside the container, **set by the official php image** |
+
+      The third one is not ours and cannot be renamed, so the build arg became `PHP_TAG`.
+      `.env` keeps `PHP_VERSION=84`: changing it to `8.4` would mean touching the Lua, the
+      `depends_on` entries and the container names, and the short form already matches the
+      URL convention (`--p84`).
 
 - [ ] **11. The two Apache vhosts are near-identical** — they differ only by the SSL
       block. PHP version routing must currently be edited in both files.

@@ -100,7 +100,9 @@ services:
     hostname: ${USERNAME}-php83dev
     build:
       context: ./docker-library/php
-      dockerfile: 8.3/Dockerfile
+      args:
+        PHP_TAG: "8.3"
+        NODE_VERSION: "${NODE_VERSION}"
     <<: *phpconfig_default
 
   php84dev:
@@ -109,7 +111,9 @@ services:
     hostname: ${USERNAME}-php84dev
     build:
       context: ./docker-library/php
-      dockerfile: 8.4/Dockerfile
+      args:
+        PHP_TAG: "8.4"
+        NODE_VERSION: "${NODE_VERSION}"
     <<: *phpconfig_default
 
 volumes:

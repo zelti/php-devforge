@@ -5,3 +5,10 @@
 [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion" # This loads nvm bash_completion
 
 alias composer='php -d memory_limit=-1 /usr/local/bin/composer'
+
+# pnpm is the preferred package manager here. npm still works (it ships with
+# Node and cannot be removed), but points you at pnpm first.
+npm() {
+    echo "→ this project prefers pnpm:  pnpm $*" >&2
+    command npm "$@"
+}

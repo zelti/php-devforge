@@ -270,9 +270,61 @@ container and does not need to change:
 - `aliases.bash` hardcodes `$HOME/php-devforge-config`. Should the installer generate
   the aliases file with the real path, or should the aliases derive it themselves?
 
-### 8. Container user / file ownership 💬 DISCUSS FIRST
+### 8. Container user / file ownership — DONE
 
-- [ ] **Choose an option** (A / B / C below), then implement
+- [x] **Implemented: the container adopts the host uid at startup (PUID/PGID)**
+
+      Measured first, rather than reasoned about. The host user is uid 1000, the
+      container ran as uid 33 (`www-data`), and:
+      - a normal user-owned folder was **read-only** to the container
+      - `chgrp 33` on your own folder fails without root — which is *why* the README
+        demanded `sudo chown`, not laziness
+      - `--user 1000:1000` at runtime **killed the container**: uid 1000 had no passwd
+        entry, so `$HOME` was empty and the entrypoint failed writing `/.bashrc`
+      - `pnpm install` in a plain user folder produced nothing at all
+
+      Publishing prebuilt images was wanted (task 16), so baking the host uid at build
+      time was ruled out. Chosen instead: keep the image generic and adjust the uid when
+      the container starts.
+
+      **What changed**
+      - Dockerfile: the dev user gets **its own group** and defaults to uid/gid 1000
+        (the usual first Linux user, so most hosts need no adjustment at all). The
+        `sed` rewriting `www-data`'s home in `/etc/passwd` was dropped as vestigial.
+      - `USER php-devforge` removed. The container starts as root, which is how the
+        official `php:fpm` image works: a root master dropping workers to an
+        unprivileged user. That `USER` line was what forced the old `exec sudo` hack.
+      - `zz-docker.conf`: workers run as `php-devforge`.
+      - The entrypoint adjusts uid/gid, fixes ownership, and no longer needs `sudo`.
+
+      **Two traps found while testing, both from the user asking the right questions**
+      - `usermod -u` does **not** chown files outside the home dir, and nvm lives in
+        `/usr/local/nvm`. Without an explicit chown, `nvm install` and global npm/pnpm
+        packages break — the container would start fine and fail later, confusingly.
+      - The ownership fix must run on **every start**, not only when the uid changes. A
+        named volume keeps the ownership it was created with: the existing
+        `dataphp-devforge` volume was still `www-data 700`, so workers could not
+        traverse `/home/php-devforge` and every page returned `File not found`.
+        `$HOMEDIR` also needs mode 755, because Apache is a different uid and still has
+        to traverse it.
+      - The recursive chown deliberately **excludes `public_html`** — that is the
+        mounted host folder, and a `chown -R` there would rewrite the ownership of the
+        user's real projects.
+
+      **Verified**: containers start; workers run as uid 1000 while the master stays
+      root; a file written by PHP over the web is owned by `yostinv` and deletable
+      without sudo; `pnpm install` leaves `node_modules` owned by you; `nvm install 22`
+      works (v22.23.2); `sudo` still works inside (the sudoers rule is by name, not
+      uid); all three host forms serve over HTTPS; it works from a wiped volume; and
+      with `PUID=1501` the user, `NVM_DIR` and created files all land on 1501.
+
+      README updated: the `sudo chown yourUser:www-data` step is gone.
+
+      **Unblocks task 7** — the installer can now create the projects folder with no
+      sudo at all.
+
+<details>
+<summary>Options considered (kept for the record)</summary>
 
 The problem this needs to solve: today the README tells users to run
 `sudo chown yourUser:www-data -R /home/php-devforge`. That is confusing for people
@@ -302,6 +354,11 @@ Options (**none chosen yet**):
 - Does anything need to run as real `www-data` specifically, or is that incidental?
 - macOS handling is different (Docker Desktop maps ownership automatically) — should
   the two platforms behave differently, or pick one approach that works for both?
+
+</details>
+
+**Still open:** none of this was tested on macOS. Docker Desktop maps ownership on its
+own there, so PUID/PGID should be harmless, but it is unverified — see task 15 (CI).
 
 ---
 

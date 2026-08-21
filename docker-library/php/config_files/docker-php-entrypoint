@@ -3,72 +3,91 @@ set -e
 
 HOMEDIR="/home/php-devforge"
 BASHRC_PHP_DEVFORGE="/usr/local/php-devforge/bashrc"
+NVM_DIR="${NVM_DIR:-/usr/local/nvm}"
+PUID="${PUID:-1000}"
+PGID="${PGID:-1000}"
 
-# Bashrc profile 
-for f in $HOME/.bashrc; do
-  if ! grep -Fxq "### CUSTOM PHP-DEVFORGE BLOCK ###" "$f"; then
-    echo -e '\n### CUSTOM PHP-DEVFORGE BLOCK ###'                             >> "$f"
-    echo 'if [ -f "'$BASHRC_PHP_DEVFORGE'" ]; then'                           >> "$f"
-    echo '  . "'$BASHRC_PHP_DEVFORGE'"'                                       >> "$f"
-    echo 'fi'                                                            >> "$f"
-    echo '### END CUSTOM PHP-DEVFORGE BLOCK ###'                              >> "$f"
-  fi
-done
+# Match the container user to the host user, so files created in here belong to
+# you outside. Without this you cannot delete node_modules without sudo.
+cur_uid="$(id -u php-devforge)"
+cur_gid="$(id -g php-devforge)"
 
-if command -v sudo >/dev/null 2>&1; then
-  if ! grep -Fxq "### CUSTOM PHP-DEVFORGE BLOCK ###" /root/.bashrc 2>/dev/null; then
-    sudo sh -c "echo -e '\n### CUSTOM PHP-DEVFORGE BLOCK ###' >> /root/.bashrc"
-    sudo sh -c "echo 'if [ -f \"$BASHRC_PHP_DEVFORGE\" ]; then' >> /root/.bashrc"
-    sudo sh -c "echo '  . \"$BASHRC_PHP_DEVFORGE\"' >> /root/.bashrc"
-    sudo sh -c "echo 'fi' >> /root/.bashrc"
-    sudo sh -c "echo '### END CUSTOM PHP-DEVFORGE BLOCK ###' >> /root/.bashrc"
-  fi
+if [ "$cur_gid" != "$PGID" ]; then
+  groupmod -o -g "$PGID" php-devforge
+fi
+if [ "$cur_uid" != "$PUID" ]; then
+  usermod -o -u "$PUID" php-devforge
 fi
 
-if [ "$PHP_XDEBUG" == "yes" ] ; then
+# Checked on every start, not only when the uid changes: a named volume keeps
+# the ownership it was created with, which may come from an older build.
+fix_owner() {
+  [ -e "$1" ] || return 0
+  if [ "$(stat -c %u "$1")" != "$PUID" ] || [ "$(stat -c %g "$1")" != "$PGID" ]; then
+    chown -R php-devforge:php-devforge "$1" 2>/dev/null || true
+  fi
+}
+
+# nvm lives outside the home dir, so usermod does not fix it. Without this,
+# `nvm install` and global npm/pnpm packages fail.
+fix_owner "$NVM_DIR"
+
+# public_html is the mounted host folder: never touch its ownership.
+chown php-devforge:php-devforge "$HOMEDIR" 2>/dev/null || true
+# Apache is a different uid and still has to traverse this to reach public_html.
+chmod 755 "$HOMEDIR" 2>/dev/null || true
+find "$HOMEDIR" -mindepth 1 -maxdepth 1 ! -name public_html \
+  -exec chown -R php-devforge:php-devforge {} + 2>/dev/null || true
+
+# Load the shared bashrc for both the dev user and root.
+for f in "$HOMEDIR/.bashrc" /root/.bashrc; do
+  [ -f "$f" ] || continue
+  grep -Fxq "### CUSTOM PHP-DEVFORGE BLOCK ###" "$f" && continue
+  {
+    echo ""
+    echo "### CUSTOM PHP-DEVFORGE BLOCK ###"
+    echo "if [ -f \"$BASHRC_PHP_DEVFORGE\" ]; then"
+    echo "  . \"$BASHRC_PHP_DEVFORGE\""
+    echo "fi"
+    echo "### END CUSTOM PHP-DEVFORGE BLOCK ###"
+  } >> "$f"
+done
+
+if [ "$PHP_XDEBUG" == "yes" ]; then
   /usr/local/bin/xdebug --force-activate
 fi
 
-# if [ "$PHP_XDEBUG" == "no" ] ; then
-#   /usr/local/bin/xdebug --force-deactivate
-# fi
-
-if [ -s $HOMEDIR/script/cron_php-devforge ]; then
-    chown php-devforge:www-data $HOMEDIR/script/cron_php-devforge
-    crontab -u www-data $HOMEDIR/script/cron_php-devforge
+if [ -s "$HOMEDIR/script/cron_php-devforge" ]; then
+  chown php-devforge:php-devforge "$HOMEDIR/script/cron_php-devforge"
+  crontab -u php-devforge "$HOMEDIR/script/cron_php-devforge"
 fi
 
-if [ ! -d "/run/php/" ]; then
-  sudo mkdir -p "/run/php"
-  sudo chown php-devforge:www-data "/run/php"
+if [ ! -d /run/php ]; then
+  mkdir -p /run/php
 fi
+chown php-devforge:php-devforge /run/php
 
-# create public_html folder if not present
 if [ ! -d "$HOMEDIR/public_html" ]; then
   mkdir -p "$HOMEDIR/public_html"
-  sudo chown -R php-devforge:www-data $HOMEDIR
 fi
 
-sudo rm /run/cron* -f
-sudo /usr/sbin/cron
+rm -f /run/cron*
+/usr/sbin/cron
 
 # Trust the local CA inside the container, so PHP calling another local site over
 # HTTPS does not fail with "cURL error 60".
 if [ -f /caroot/rootCA.pem ]; then
   if ! cmp -s /caroot/rootCA.pem /usr/local/share/ca-certificates/php-devforge-ca.crt; then
-    sudo install -m 644 /caroot/rootCA.pem /usr/local/share/ca-certificates/php-devforge-ca.crt
-    sudo update-ca-certificates >/dev/null 2>&1 || true
+    install -m 644 /caroot/rootCA.pem /usr/local/share/ca-certificates/php-devforge-ca.crt
+    update-ca-certificates >/dev/null 2>&1 || true
   fi
 fi
 
 # first arg is `-f` or `--some-option`
 if [ "${1#-}" != "$1" ]; then
-	set -- php-fpm "$@"
+  set -- php-fpm "$@"
 fi
 
-# Si no es root, usar sudo
-if [ "$(id -u)" -ne 0 ]; then
-	exec sudo "$@"
-else
-	exec "$@"
-fi
+# Runs as root on purpose: the php-fpm master needs it to drop workers to the
+# dev user (see zz-docker.conf). Workers never run as root.
+exec "$@"

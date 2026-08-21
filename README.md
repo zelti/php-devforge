@@ -118,11 +118,12 @@ forge:logs:php84
 ### 🌐 Accessing Your Projects
 
 1. **Create project structure:**
-   Place your PHP projects in `/home/php-devforge/public_html/` 
-   it will create this folder on your local you will need to change the folder user and group manually for first time
-   ```
-    sudo chown yourUser:www-data -R /home/php-devforge
-    ```
+   Place your PHP projects in `/home/php-devforge/public_html/`.
+
+   No `chown` is needed. The PHP containers adopt your user id at startup
+   (`PUID`/`PGID` in `.env`, `1000` by default), so files they create belong to you
+   and `node_modules` can be deleted without `sudo`. If your ids differ, check them
+   with `id -u` and `id -g` and set them in `.env`.
 
 2. **URL Structure:**
    Projects are accessible via automatically generated URLs:
@@ -198,7 +199,7 @@ Plain PHP app → `plain-php--site.phpforge.dev`
 - **DNS resolution not working**: Ensure you ran `./setup-local-dns.sh` and restarted your browser or system. You may need to flush DNS cache.
 - **SSL certificate not trusted**: Make sure you ran `./install_cert.sh` and restart your browser afterwards. Check the CA is present with `openssl verify -CAfile .caroot/rootCA.pem certificates/php-devforge.pem`. Firefox keeps its own trust store on Linux, so install `nss` (Arch) or `libnss3-tools` (Debian/Ubuntu) and re-run the script if Firefox still complains.
 - **Containers not starting**: Check that Docker and Docker Compose are installed and running. Ensure ports 80 and 443 are not in use by other services.
-- **Permission issues with public_html**: Run `sudo chown yourUser:www-data -R /home/php-devforge` to set correct ownership.
+- **Permission issues with public_html**: Check that `PUID`/`PGID` in `.env` match your own ids (`id -u`, `id -g`), then recreate the containers with `docker compose up -d --force-recreate`. The containers adopt those ids on startup, so files they write are owned by you.
 - **PHP version not switching**: Use the aliases `forge:use:php83` or `forge:use:php84` to change the default version, or append `--p83`/`--p84` to the URL.
 - **Aliases not working**: Ensure you sourced `aliases.bash` or added it to your `~/.bashrc`.
 

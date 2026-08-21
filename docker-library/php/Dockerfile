@@ -60,9 +60,10 @@ RUN pecl install imagick redis apcu xdebug \
 # Instalar Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Crear usuario php-devforge con UID/GID 33
-RUN /usr/sbin/useradd -g 33 -o -u 33 -c "php dev" -m -d /home/php-devforge -s /bin/bash php-devforge \
-    && sed -i -e "s/\\/var\\/www/\\/home\\/php-devforge/g" /etc/passwd
+# Dev user with its own group. 1000/1000 is the usual first user on Linux, so
+# most hosts need no adjustment; the entrypoint fixes it via PUID/PGID otherwise.
+RUN groupadd -g 1000 php-devforge \
+    && useradd -u 1000 -g php-devforge -c "php dev" -m -d /home/php-devforge -s /bin/bash php-devforge
 
 RUN echo 'php-devforge ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/php-devforge \
     && chmod 440 /etc/sudoers.d/php-devforge
@@ -102,5 +103,4 @@ RUN chmod +x /usr/local/bin/xdebug \
 
 COPY config_files/docker-php-ext-xdebug.ini "/usr/local/etc/php/mods-available/docker-php-ext-xdebug.ini"
 
-USER php-devforge
 WORKDIR /home/php-devforge

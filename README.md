@@ -24,7 +24,7 @@ The environment automatically generates URLs based on your project folder struct
 
 ### 📋 Prerequisites
 
-- Docker and Docker Compose
+- Docker and Docker Compose (also used to generate the SSL certificates)
 - Git
 - Bash shell (Linux/macOS)
 
@@ -49,9 +49,14 @@ The environment automatically generates URLs based on your project folder struct
    ./install_cert.sh
    ```
    This script:
-   - Installs mkcert if not present
-   - Generates wildcard SSL certificates for `*.phpforge.dev`
-   - Installs the local Certificate Authority (CA) in your system trust store
+   - Runs mkcert **inside a Docker container** — nothing is installed on your machine
+   - Generates wildcard SSL certificates for `*.phpforge.dev` into `certificates/`
+   - Saves the Certificate Authority (CA) in `.caroot/`, and reuses it on every later run
+   - Installs that CA in your system trust store, and in Firefox/Chrome when `certutil` is available
+
+   It will ask for your password once: adding the CA to the system trust store is the
+   only step that cannot happen inside a container, because a container has its own
+   trust store. You will not be asked again on later runs.
 
 4. **Setup local DNS:**
    ```bash
@@ -134,7 +139,7 @@ forge:logs:php84
 
 - Edit code in your IDE (files are volume-mounted for live updates)
 - Changes appear immediately without restarting containers
-- Use Xdebug for debugging (configure your IDE for port 9000)
+- Use Xdebug for debugging (configure your IDE to listen on port **9003**, the Xdebug 3 default)
 - Access PHP containers via `forge:exec:php84` (or `forge:exec:php83` for PHP 8.3)
 
 ## 🛠️ Supported PHP Extensions and Tools
@@ -191,7 +196,7 @@ Plain PHP app → `plain-php--site.phpforge.dev`
 ### ❓ Common Issues
 
 - **DNS resolution not working**: Ensure you ran `./setup-local-dns.sh` and restarted your browser or system. You may need to flush DNS cache.
-- **SSL certificate not trusted**: Make sure you ran `./install_cert.sh` and the CA is installed in your system's trust store. Restart your browser after installing.
+- **SSL certificate not trusted**: Make sure you ran `./install_cert.sh` and restart your browser afterwards. Check the CA is present with `openssl verify -CAfile .caroot/rootCA.pem certificates/php-devforge.pem`. Firefox keeps its own trust store on Linux, so install `nss` (Arch) or `libnss3-tools` (Debian/Ubuntu) and re-run the script if Firefox still complains.
 - **Containers not starting**: Check that Docker and Docker Compose are installed and running. Ensure ports 80 and 443 are not in use by other services.
 - **Permission issues with public_html**: Run `sudo chown yourUser:www-data -R /home/php-devforge` to set correct ownership.
 - **PHP version not switching**: Use the aliases `forge:use:php83` or `forge:use:php84` to change the default version, or append `--p83`/`--p84` to the URL.

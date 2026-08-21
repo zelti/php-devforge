@@ -1,2 +1,5 @@
 /.vscode
 /elasticsearch
+/certificates/*
+!/certificates/.gitkeep
+/.caroot

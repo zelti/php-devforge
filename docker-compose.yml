@@ -10,17 +10,35 @@ x-phpconfig_default: &phpconfig_default
   volumes:
     - dataphp-devforge:/home/php-devforge
     - /home/php-devforge/public_html:/home/php-devforge/public_html
+    - ./.caroot:/caroot:ro
   environment:
     - PHP_XDEBUG=${XDEBUG_ENABLE}
     - XDEBUG_IDKEY=${XDEBUG_IDKEY}
   logging: *json-logging
 
 services:
+  # Generates the certificates. Not started by `up -d`; run it with:
+  #   docker compose run --rm --user "$(id -u):$(id -g)" mkcert
+  # The CA is kept in ./.caroot so it survives and stays trusted on the host.
+  mkcert:
+    build: ./docker-library/mkcert
+    image: php-devforge/mkcert:dev
+    profiles: ["tools"]
+    volumes:
+      - ./certificates:/certs
+      - ./.caroot:/caroot
+    working_dir: /certs
+    command: >
+      -cert-file php-devforge.pem -key-file php-devforge.key
+      ${DEV_DOMAIN} *.${DEV_DOMAIN} localhost 127.0.0.1 ::1
+
   dnsmasq:
     image: andyshinn/dnsmasq
     container_name: dnsmasq
     ports:
-      - "53:53/udp"
+      # Listens on localhost only, on a configurable port. Port 53 is usually
+      # taken (systemd-resolved, Pi-hole), and which port is free varies per machine.
+      - "127.0.0.1:${DNS_PORT:-5354}:53/udp"
     command: --address=/${DEV_DOMAIN}/127.0.0.1 --local=/${DEV_DOMAIN}/
     restart: unless-stopped
     cap_add:
@@ -82,7 +100,7 @@ services:
     hostname: ${USERNAME}-php83dev
     build:
       context: ./docker-library/php
-      dockerfile: ./docker-library/php/8.3
+      dockerfile: 8.3/Dockerfile
     <<: *phpconfig_default
 
   php84dev:
@@ -91,7 +109,7 @@ services:
     hostname: ${USERNAME}-php84dev
     build:
       context: ./docker-library/php
-      dockerfile: ./docker-library/php/8.4
+      dockerfile: 8.4/Dockerfile
     <<: *phpconfig_default
 
 volumes:

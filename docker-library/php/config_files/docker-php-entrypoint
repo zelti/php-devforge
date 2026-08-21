@@ -52,6 +52,15 @@ fi
 sudo rm /run/cron* -f
 sudo /usr/sbin/cron
 
+# Trust the local CA inside the container, so PHP calling another local site over
+# HTTPS does not fail with "cURL error 60".
+if [ -f /caroot/rootCA.pem ]; then
+  if ! cmp -s /caroot/rootCA.pem /usr/local/share/ca-certificates/php-devforge-ca.crt; then
+    sudo install -m 644 /caroot/rootCA.pem /usr/local/share/ca-certificates/php-devforge-ca.crt
+    sudo update-ca-certificates >/dev/null 2>&1 || true
+  fi
+fi
+
 # first arg is `-f` or `--some-option`
 if [ "${1#-}" != "$1" ]; then
 	set -- php-fpm "$@"

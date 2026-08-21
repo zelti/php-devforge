@@ -39,6 +39,35 @@ usage() {
 	EOF
 }
 
+# Reloads php-fpm so it picks up the Xdebug change.
+reload_fpm() {
+  local pidfile=/run/php/php-fpm.pid
+  local pid=""
+
+  if [ -r "$pidfile" ]; then
+    pid=$(cat "$pidfile" 2>/dev/null)
+  fi
+
+  if [ -z "$pid" ]; then
+    # Fallback: find the master in /proc (no ps/pgrep/pkill in this image).
+    # No leading '*' in the pattern, so this loop does not match itself.
+    for proc in /proc/[0-9]*; do
+      case "$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null)" in
+        "php-fpm: master"*) pid="${proc#/proc/}"; break ;;
+      esac
+    done
+  fi
+
+  if [ -z "$pid" ]; then
+    echo "Warning: php-fpm master not found; could not reload." >&2
+    return 1
+  fi
+
+  # 'kill' is a shell builtin here; there is no /bin/kill, so 'sudo kill' fails.
+  # It has to go through sh -c.
+  sudo sh -c "kill -USR2 $pid" 2>/dev/null
+}
+
 # set xdebug.remote_host in xdebug.ini
 # set env var to overload xdebug.idekey
 set_xdebug_ini() {
@@ -72,7 +101,7 @@ enable_xdebug() {
   sudo ln -s "$PHP_ETC_XDEBUG" "$PHP_ETC_LINK"
 
   # reload fpm php service
-  sudo -- sh -c "kill -USR2 40" > /dev/null 2>&1
+  reload_fpm || true
 }
 
 disable_xdebug() {
@@ -80,7 +109,7 @@ disable_xdebug() {
   sudo rm -f "$PHP_ETC_LINK"
 
   # reload fpm php service
-  sudo -- sh -c "kill -USR2 40" > /dev/null 2>&1
+  reload_fpm || true
 }
 
 main() {

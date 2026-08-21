@@ -68,3 +68,26 @@ function silly_mapper(r)
     
     return apache2.DECLINED
 end
+
+-- Picks the PHP-FPM backend from the host: --pNN wins, else PHP_VERSION from .env.
+-- Only two digits are captured, so the Host header cannot inject into the address.
+function set_php_handler(r)
+    if not r.filename or not r.filename:match("%.php$") then
+        return apache2.DECLINED
+    end
+
+    local dev_domain = os.getenv("DEV_DOMAIN")
+    if not dev_domain then return apache2.DECLINED end
+
+    local ver = r.hostname:match("%-%-p([0-9][0-9])%." .. dev_domain:gsub("%.", "%%.") .. "$")
+                or os.getenv("PHP_VERSION")
+
+    -- No version means no handler, so Apache would serve the .php as text.
+    if not ver or not ver:match("^[0-9][0-9]$") then
+        r:err("PHP_VERSION missing or invalid; refusing to serve " .. r.filename)
+        return 500
+    end
+
+    r.handler = "proxy:fcgi://php" .. ver .. "dev:9000"
+    return apache2.DECLINED
+end

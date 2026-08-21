@@ -52,4 +52,8 @@ WORKDIR /home/php-devforge
 
 EXPOSE 80 443
 
+COPY config_files/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["apache2ctl", "-D", "FOREGROUND"]

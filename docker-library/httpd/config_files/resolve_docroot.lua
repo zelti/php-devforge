@@ -33,8 +33,11 @@ function silly_mapper(r)
         local path_parts = {}
         
         if string.find(final_path, "%-%-") then
-            -- Usar separador --
-            for part in string.gmatch(final_path, "[^%-%-]+") do
+            -- Split on "--" only. "[^%-%-]+" would split on every single hyphen,
+            -- so a project named mi-app became sites/app/mi instead of sites/mi-app.
+            -- \1 cannot appear in a hostname, so it is a safe temporary separator.
+            local tmp = (final_path:gsub("%-%-", "\1"))
+            for part in string.gmatch(tmp, "[^\1]+") do
                 table.insert(path_parts, part)
             end
         else

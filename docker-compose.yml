@@ -9,7 +9,7 @@ x-logging: &json-logging
 x-phpconfig_default: &phpconfig_default
   volumes:
     - dataphp-devforge:/home/php-devforge
-    - /home/php-devforge/public_html:/home/php-devforge/public_html
+    - ${PROJECTS_DIR:-/home/php-devforge/public_html}:/home/php-devforge/public_html
     - ./.caroot:/caroot:ro
   environment:
     - PHP_XDEBUG=${XDEBUG_ENABLE}
@@ -59,7 +59,7 @@ services:
     volumes:
       - dataphp-devforge:/home/php-devforge:ro
       - ./certificates:/etc/apache2/ssl/:ro
-      - /home/php-devforge/public_html:/home/php-devforge/public_html
+      - ${PROJECTS_DIR:-/home/php-devforge/public_html}:/home/php-devforge/public_html
     container_name: apachedev
     hostname: ${USERNAME}-apachedev
     environment:

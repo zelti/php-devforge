@@ -216,9 +216,50 @@ approach.
 
 ## 💬 Needs discussion before implementing
 
-### 7. Interactive installer 💬 DISCUSS FIRST
+### 7. Interactive installer — DONE
 
-- [ ] **Agree on the approach** (questions below), then implement
+- [x] **Implemented as `install.sh`**
+
+      Asks for domain, projects folder and default PHP version; finds a free DNS port;
+      detects `PUID`/`PGID` with `id -u`/`id -g`; writes `.env`; creates the projects
+      folder; and offers to run the certificate and DNS steps. Re-running is safe: the
+      current `.env` supplies the defaults, and the old one is kept as `.env.backup`.
+      Flags for unattended use: `--domain=`, `--projects-dir=`, `--php=`, `--dns-port=`,
+      `--yes`, `--skip-cert`, `--skip-dns`. With no terminal it refuses to run rather
+      than silently accepting defaults.
+
+      **Config split:** `.env` is now generated and gitignored; `.env.example` is the
+      tracked template. This also fixes `forge:use:php83` dirtying the git tree on every
+      PHP version switch, and stops personal values (domain, uid, paths) being committed.
+      Anyone with an existing clone will see `.env` drop out of version control; their
+      local file is untouched.
+
+      **Projects folder:** `PROJECTS_DIR` on the host, `~/php-devforge` by default,
+      mounted at the fixed `/home/php-devforge/public_html` inside the containers — so
+      Apache, the Lua resolver and PHP need no changes. Only 2 lines in compose. The
+      installer creates `projects/` for code and `sites/` for symlinks, plus a
+      `sites/welcome` test page. No `sudo` at any point, thanks to task 8.
+
+      **Bug found while testing — hyphens in project names were broken.** The Lua split
+      the host with `[^%-%-]+`, which is "not a hyphen", not "split on `--`". So:
+
+      | Host | Resolved to | |
+      |---|---|---|
+      | `mi-app--sites` | `sites/app/mi` | wrong |
+      | `laravel-app--sites` | `sites/app/laravel` | wrong |
+      | `miapp--sites` | `sites/miapp` | fine |
+
+      **All three examples in the README** (`laravel-app`, `symfony-app`, `plain-php`)
+      were broken, and had been all along. Fixed by replacing `--` with a sentinel that
+      cannot occur in a hostname before splitting. Verified: `mi-app--sites`,
+      `laravel-app--sites`, `a--b--c` and `mi-app--sites--p83` all resolve correctly.
+
+      **README updated:** installer flow, the new folder layout, the warning that
+      symlinks must point inside `PROJECTS_DIR`, and the clone path is no longer forced
+      (aliases resolve their own location since task 3).
+
+<details>
+<summary>Original open questions (kept for the record)</summary>
 
 Goal: replace the manual README steps with `./install.sh`, which asks for the
 settings and does the setup.
@@ -267,6 +308,8 @@ container and does not need to change:
   ```
 
   The same idea applies to ports 80 and 443.
+
+</details>
 - `aliases.bash` hardcodes `$HOME/php-devforge-config`. Should the installer generate
   the aliases file with the real path, or should the aliases derive it themselves?
 

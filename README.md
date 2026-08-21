@@ -32,52 +32,40 @@ The environment automatically generates URLs based on your project folder struct
 
 1. **Clone the repository:**
    ```bash
-   git clone git@github.com:zelti/php-devforge.git $HOME/php-devforge-config
-   cd $HOME/php-devforge-config
+   git clone git@github.com:zelti/php-devforge.git
+   cd php-devforge
    ```
-    It’s recommended to clone the project inside your home directory.
-    This ensures the provided bash alias will work correctly.
+    Clone it wherever you like: the scripts and aliases resolve their own location.
 
-2. **Configure environment variables:**
-   Edit the `.env` file to customize:
-   - `DEV_DOMAIN`: Your development domain (default: phpforge.dev)
-   - `PHP_VERSION`: Default PHP version (83 for 8.3, 84 for 8.4)
-   - `USERNAME`: Your system username
-
-3. **Install SSL certificates:**
+2. **Run the installer:**
    ```bash
-   ./install_cert.sh
+   ./install.sh
    ```
-   This script:
-   - Runs mkcert **inside a Docker container** — nothing is installed on your machine
-   - Generates wildcard SSL certificates for `*.phpforge.dev` into `certificates/`
-   - Saves the Certificate Authority (CA) in `.caroot/`, and reuses it on every later run
-   - Installs that CA in your system trust store, and in Firefox/Chrome when `certutil` is available
+   It asks for your domain, where your projects should live and the default PHP
+   version, finds a free DNS port, detects your user id, writes `.env`, creates the
+   projects folder, and offers to generate the certificates and configure local DNS.
 
-   It will ask for your password once: adding the CA to the system trust store is the
-   only step that cannot happen inside a container, because a container has its own
-   trust store. You will not be asked again on later runs.
-
-4. **Setup local DNS:**
+   Safe to re-run: your current `.env` supplies the defaults. For unattended use:
    ```bash
-   ./setup-local-dns.sh
+   ./install.sh --yes --domain=mydomain.dev --projects-dir=~/code
+   ./install.sh --help        # every option
    ```
-   This configures your system to resolve `*.phpforge.dev` domains to `127.0.0.1`.
 
-5. **Source the aliases (optional but recommended):**
-    ```bash
-    source aliases.bash
-    ```
-    Or add the following to your `~/.bashrc` for permanent availability:
-    ```bash
-    source $HOME/php-devforge-config/aliases.bash
-    ```
+   Nothing needs `sudo` except the DNS step, and only if you accept it.
 
-6. **Start the containers:**
+3. **Load the shortcuts (optional):**
+   ```bash
+   source aliases.bash
+   ```
+   Or add that line to your `~/.bashrc`, using the full path to this folder.
+
+4. **Start the containers:**
     ```bash
-    docker-compose up -d
+    docker compose up -d
     ```
     (If you sourced the aliases, you can use `forge:start` instead)
+
+    Check it works: `https://welcome--sites.phpforge.dev`
 
 ## 💻 Usage
 
@@ -118,12 +106,25 @@ forge:logs:php84
 ### 🌐 Accessing Your Projects
 
 1. **Create project structure:**
-   Place your PHP projects in `/home/php-devforge/public_html/`.
+   Your projects live in the folder you chose during install (`PROJECTS_DIR` in
+   `.env`, `~/php-devforge` by default). The installer creates it with:
+
+   ```
+   ~/php-devforge/
+   ├── projects/          your actual code
+   └── sites/             one symlink per project, for shorter URLs
+       └── welcome/       a test page
+   ```
+
+   Inside the containers this is always `/home/php-devforge/public_html`, which is
+   where Apache and PHP look. Only the host side is configurable.
+
+   **Symlinks must point inside `PROJECTS_DIR`.** The containers only see that
+   folder, so a link to anywhere else resolves to nothing and returns 404.
 
    No `chown` is needed. The PHP containers adopt your user id at startup
-   (`PUID`/`PGID` in `.env`, `1000` by default), so files they create belong to you
-   and `node_modules` can be deleted without `sudo`. If your ids differ, check them
-   with `id -u` and `id -g` and set them in `.env`.
+   (`PUID`/`PGID` in `.env`), so files they create belong to you and `node_modules`
+   can be deleted without `sudo`.
 
 2. **URL Structure:**
    Projects are accessible via automatically generated URLs:

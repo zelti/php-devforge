@@ -40,8 +40,8 @@ server {
 server {
     listen 443 ssl;
     server_name ~^(?<subdomains>.+)\.${DEV_DOMAIN}$;
-    ssl_certificate     /etc/nginx/ssl/php-devbox.pem;  # certificate
-    ssl_certificate_key /etc/nginx/ssl/php-devbox.key;  # private key
+    ssl_certificate     /etc/nginx/ssl/php-devforge.pem;  # certificate
+    ssl_certificate_key /etc/nginx/ssl/php-devforge.key;  # private key
     include /etc/nginx/snippets/common_server_config.conf;
 }
 

@@ -1,0 +1,418 @@
+# PHP DevForge — Task List
+
+Working list of what is left to make the project install and run correctly on a
+clean machine.
+
+**How to use this file:** each task is a checkbox. Mark it done by putting an `x`
+inside the brackets:
+
+```markdown
+- [ ] not done yet
+- [x] done
+```
+
+Tasks marked **💬 DISCUSS FIRST** are not ready to implement — they need a design
+decision before any code is written. Do not start those without agreeing on the
+approach.
+
+---
+
+## ✅ Done
+
+- [x] **Certificate setup rewritten to run mkcert in a container** — nothing is
+      installed on the host any more. `mkcert_install/install_linux.sh` and
+      `install_macos.sh` deleted (no more Go toolchain).
+      New: `docker-library/mkcert/Dockerfile`, `mkcert` service in `docker-compose.yml`
+      behind the `tools` profile.
+- [x] **Certificate filename mismatch fixed** — everything now uses `php-devforge.*`.
+      Previously `install_cert.sh` wrote `php-devbox.*` while Apache read
+      `php-devforge.*`, so HTTPS could never start.
+- [x] **The trusted CA is now the CA that signed the certificate** — the old
+      `sudo mkcert -install` could trust a different CA than the one used to sign.
+      Verified with `openssl verify -CAfile .caroot/rootCA.pem`.
+- [x] **CA stored in `.caroot/`, outside the Apache mount** — the CA private key is
+      no longer exposed to the web server.
+- [x] **PHP containers trust the CA** — fixes `cURL error 60` when one local site
+      calls another over HTTPS. `./.caroot:/caroot:ro` + install step in
+      `docker-library/php/config_files/docker-php-entrypoint`.
+- [x] **Apache self-heals when certificates are missing** — generates a temporary
+      self-signed certificate instead of failing to start.
+      New: `docker-library/httpd/config_files/docker-entrypoint.sh` + `<IfFile>` in
+      `devlocal_https.conf`.
+- [x] **Private keys no longer committed to git** — `certificates/` and `.caroot/`
+      are gitignored, old `php-devbox.*` untracked.
+- [x] **PHP images can be built at all** — `dockerfile:` in `docker-compose.yml`
+      pointed at `./docker-library/php/8.3`, which resolves relative to the build
+      context and so became `docker-library/php/docker-library/php/8.3`. Also `8.3`
+      is a directory, not a file. Now `8.3/Dockerfile`.
+
+---
+
+## 🔴 Blockers
+
+- [x] **19. PHP source code is served as plain text** ⚠️ **SECURITY** — FIXED
+      Requesting a `.php` file **directly** returns its source instead of running it:
+
+      ```
+      https://sitio.phpforge.dev/            -> PHP 8.4.24 OK        (runs)
+      https://sitio.phpforge.dev/index.php   -> <?php echo ...       (LEAKS SOURCE)
+      https://sitio--p84.phpforge.dev/index.php -> PHP 8.4.24 OK     (runs)
+      ```
+
+      Any project with credentials in a PHP file exposes them to anything that can reach
+      the vhost. Found while testing task 5.
+
+      **Cause:** the vhosts pick the FPM backend with
+      `<If "reqenv('PHP_VERSION') -eq 84">`. `PHP_VERSION` reaches the request through
+      `PassEnv` (mod_env), which runs at the **fixups** phase — *after* `<If>` is
+      evaluated. So `reqenv('PHP_VERSION')` is empty, no `SetHandler` is applied, and
+      Apache serves the file as a static document.
+      - `/` works because mod_dir internally redirects to `/index.php`, and that
+        subrequest inherits a `subprocess_env` already filled in by fixups.
+      - `--p83`/`--p84` work because `SetEnvIf` (mod_setenvif) runs at
+        post-read-request, early enough for `<If>`.
+
+      **Fix applied:** `reqenv('PHP_VERSION')` → `env('PHP_VERSION')` in both vhosts.
+      Apache's `env` checks `subprocess_env` first and then the real process
+      environment, where `PHP_VERSION` already lives via compose — so it resolves at
+      `<If>` evaluation time regardless of when `PassEnv` runs. `SetEnvIf` still wins for
+      `--p83`/`--p84` because `subprocess_env` is consulted first.
+      Files: `devlocal.conf`, `devlocal_https.conf` (the same block is duplicated in
+      both — see task 11).
+
+      **Verified after the fix:**
+
+      | Request | Before | After |
+      |---|---|---|
+      | `/` | ran | ran |
+      | `/index.php` | **leaked source** | runs (200) |
+      | `/secreto.php` (with a password inside) | **leaked source** | runs (200) |
+      | `http://` on port 80 | **leaked source** | runs (200) |
+      | `--p84/index.php` | ran | runs (200) |
+      | `--p83/index.php` | ran | routes to php83dev (500 while that container is off — proves the handler is applied) |
+
+      **Second half of the fix — no default handler existed.** Swapping `reqenv` for
+      `env` was not enough. The config only *enumerated* versions:
+
+      ```apache
+      <If "env('PHP_VERSION') -eq 83"> ... </If>
+      <If "env('PHP_VERSION') -eq 84"> ... </If>
+      ```
+
+      Any value outside that list — empty, `85`, a typo — matched nothing, so no handler
+      was assigned and the source leaked again. Measured: with `PHP_VERSION=` and with
+      `PHP_VERSION=85`, `/index.php` returned raw source.
+
+      → A default `SetHandler "proxy:fcgi://php${PHP_VERSION}dev:9000"` now sits above
+      the `<If>` blocks (Apache interpolates `${PHP_VERSION}` at startup, the same way the
+      vhost already does with `${DEV_DOMAIN}`). The `<If>` blocks still override it for
+      `--p83`/`--p84`.
+      → The Apache entrypoint now **refuses to start** if `PHP_VERSION` is empty or unset,
+      with a clear message, rather than starting in a state that serves source.
+
+      The design now **fails closed**: no value of `PHP_VERSION` can result in a `.php`
+      file being served as text.
+
+      | `PHP_VERSION` | Result |
+      |---|---|
+      | `84` | runs PHP 8.4 |
+      | `83` | routes to php83dev |
+      | `85` (does not exist) | proxy error, no source |
+      | empty | container refuses to start, clear message |
+      | unset | container refuses to start, clear message |
+
+      **Note:** this enumeration is also why adding PHP 8.5 means editing both vhosts —
+      see tasks 11 and 18.
+
+## 🔴 Blockers — the stack does not start until these are fixed
+
+- [x] **1. dnsmasq cannot bind port 53** — FIXED
+      `docker-compose.yml` published `53:53/udp` (= `0.0.0.0:53`), colliding with
+      `systemd-resolved`, which holds port 53 on `127.0.0.53`, `127.0.0.54` and
+      `172.17.0.1`. Because `apachedev` has `depends_on: dnsmasq`, the whole stack
+      stopped there.
+      → Now listens on `127.0.0.1:${DNS_PORT:-5354}` and `DNS_PORT` is a setting in
+      `.env`. Port 53 is avoided entirely: which port is free differs per machine
+      (Ubuntu server often has 53 free, Pi-hole users do not, macOS has 5353 taken),
+      so hardcoding any single port is wrong for a project other people install.
+      Verified: dnsmasq starts, answers `*.phpforge.dev` → `127.0.0.1`, still forwards
+      other domains, and the full chain dnsmasq → php84dev → apachedev now boots and
+      serves PHP over HTTPS.
+      **Note:** automatic port detection belongs to the installer — see task 7.
+
+- [x] **2. The DNS script hijacks all name resolution on the host** — FIXED
+      `setup-local-dns.sh` wrote `Domains=~.`, routing *every* DNS query on the machine
+      through the dnsmasq container; stopping the stack meant losing DNS entirely.
+      Three problems were found, not one:
+      - **A** — `Domains=~.` (global). Now `Domains=~${DEV_DOMAIN}`, a routing domain,
+        so only the dev domain goes to dnsmasq.
+      - **B** — the script never read `.env`, so it could not know `DEV_DOMAIN`
+        (nor the new `DNS_PORT`). It now reads it.
+      - **C** — it tried **NetworkManager first**, which on this machine meant
+        `nmcli ... ipv4.dns` (global again), bouncing the network connection to apply,
+        and `ipv4.dns` cannot express a port. Order is now systemd-resolved first —
+        when resolved is active, NetworkManager delegates DNS to it anyway.
+      Unsupported systems are now left **untouched** with printed instructions, rather
+      than having their DNS rewritten unsafely. Undo is one file:
+      `./setup-local-dns.sh --remove`. The ~150 lines of backup/restore are gone,
+      because nothing is broken any more. Script went from 376 to ~250 lines.
+      Verified: `*.phpforge.dev` → `127.0.0.1` through the normal system resolver
+      (wildcard works for any subdomain), **and with dnsmasq stopped github.com,
+      wikipedia.org and debian.org all still resolve** — the whole point of the fix.
+      Full end-to-end with real DNS (no `--resolve`): `PHP 8.4.24 OK`, `http_code=200`,
+      `ssl_verify_result=0`.
+
+---
+
+## 🟠 Broken features
+
+- [x] **3. `forge:current` never works** — FIXED
+      It read `$HOME//configs-docker/.env`, a path left over from an older project name
+      (with a double slash). The real cause was that the project path was **hardcoded in
+      5 separate aliases** — someone renamed the project and missed one. Patching just
+      that line would have let the same bug happen again.
+      → `aliases.bash` now discovers its own location:
+      `PHP_DEVFORGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"`.
+      One source of truth, and the aliases now work **wherever you clone the project**,
+      instead of requiring exactly `$HOME/php-devforge-config`.
+      Two extra bugs found in the same file and fixed:
+      - `forge:reload` ran `docker-compose up -d` **twice** (copy/paste leftover)
+      - every alias did `cd ... && cd -`, which moved the user's terminal. They now run
+        in a subshell `( ... )`, so your shell never changes directory.
+      Verified from `/tmp`: path resolved correctly, `forge:current` prints
+      `Versión actual: PHP 8.4`, and the terminal stays where it was.
+
+- [x] **4. Xdebug port collides with PHP-FPM** — FIXED
+      `xdebug.client_port` was 9000, the same port php-fpm listens on. Now 9003, the
+      Xdebug 3 default. README updated (it told users to point their IDE at 9000).
+      Also removed `xdebug.remote_handler`, a leftover Xdebug 2 setting that Xdebug 3
+      ignores. Verified: `xdebug.client_port => 9003`.
+
+- [x] **5. FPM reload uses a hardcoded PID** — FIXED
+      `kill -USR2 40` assumed the FPM master is always PID 40. Measured in a running
+      container: the master was **PID 1124**. So the signal never arrived and
+      **enabling Xdebug never affected web requests** — only the CLI. Users had to
+      restart the container without knowing why.
+      → New `reload_fpm()` reads `/run/php/php-fpm.pid` (already configured in
+      `zz-docker.conf`), falling back to scanning `/proc` for the master, since the
+      image has no `ps`, `pgrep` or `pkill`.
+      **Gotcha worth remembering:** `kill` exists only as a shell builtin here — there
+      is no `/bin/kill` — so `sudo kill` fails with "command not found". The signal must
+      go through `sudo sh -c "kill ..."`. That is why the original code used `sh -c`.
+      Verified end to end: toggling Xdebug now changes the **web** state
+      (`XDEBUG ACTIVO` ⇄ `xdebug apagado`) without restarting the container.
+
+- [x] **6. macOS DNS handling is wrong twice** — FIXED (same rewrite as task 2)
+      - It rewrote DNS on every network interface via `networksetup`. Now it writes the
+        native per-domain file `/etc/resolver/${DEV_DOMAIN}` with `nameserver` + `port`.
+      - `test_dns()` used `nslookup`, which **bypasses** `/etc/resolver` and so reported
+        failure even when resolution worked. Now uses `dscacheutil -q host` on macOS and
+        `getent hosts` on Linux — both go through the real system resolver.
+      Not verifiable here (no macOS machine); the Linux half of the same code path is
+      verified. Worth confirming on a Mac before release — see task 15 (CI could run
+      this on a macOS runner).
+
+---
+
+## 💬 Needs discussion before implementing
+
+### 7. Interactive installer 💬 DISCUSS FIRST
+
+- [ ] **Agree on the approach** (questions below), then implement
+
+Goal: replace the manual README steps with `./install.sh`, which asks for the
+settings and does the setup.
+
+Rough idea (**not agreed yet**):
+
+```
+Development domain?              [phpforge.dev]
+Where will your projects live?   [~/sites]
+Default PHP version?             [8.4]
+Generate SSL certificates now?   [Y/n]
+Configure local DNS now?         [Y/n]
+```
+
+Good news on scope: the projects folder appears in 10 places, but only **2 are the
+host side** (`docker-compose.yml:12,58`). Everything else is the path *inside* the
+container and does not need to change:
+
+```yaml
+- ${PROJECTS_DIR}:/home/php-devforge/public_html
+  └── configurable ──┘└── leave as is ──┘
+```
+
+**Open questions to settle first:**
+
+- Interactive prompts only, or also flags (`--domain=`, `--projects-dir=`) so it can
+  run unattended / in CI?
+- Should it be safe to re-run? Update an existing `.env` or refuse to overwrite?
+- Should `.env` become a generated file (gitignored) with a tracked `.env.example`?
+  This would also fix the fact that `forge:use:php83` rewrites a **tracked** file,
+  dirtying the git tree on every PHP version switch.
+- Should the installer run `install_cert.sh` and `setup-local-dns.sh`, or only write
+  configuration and print the commands?
+- What default projects folder? `~/sites`? `~/php-devforge/public_html`?
+- Should it check prerequisites (Docker running, ports 80/443 free) and fail early
+  with a clear message?
+- **Agreed already:** the installer must **detect a free DNS port automatically and
+  suggest it**, then write it to `.env` as `DNS_PORT` (the user can still change it by
+  hand afterwards). The setting already exists; only the detection is missing:
+
+  ```
+  Buscando un puerto libre para DNS...
+    5354  ocupado
+    5355  libre  ✓
+  Puerto DNS a usar? [5355]
+  ```
+
+  The same idea applies to ports 80 and 443.
+- `aliases.bash` hardcodes `$HOME/php-devforge-config`. Should the installer generate
+  the aliases file with the real path, or should the aliases derive it themselves?
+
+### 8. Container user / file ownership 💬 DISCUSS FIRST
+
+- [ ] **Choose an option** (A / B / C below), then implement
+
+The problem this needs to solve: today the README tells users to run
+`sudo chown yourUser:www-data -R /home/php-devforge`. That is confusing for people
+installing the project, and it exists only because of how the container user is set up.
+
+Current situation:
+
+- Both PHP Dockerfiles create `php-devforge` with **hardcoded UID/GID 33**
+  (`useradd -g 33 -o -u 33`), i.e. `www-data`
+- php-fpm itself runs as `www-data` (`zz-docker.conf`)
+- Apache also runs as `www-data`
+- So host files must be group-owned by GID 33 and group-writable for the containers
+  to write to them
+
+Options (**none chosen yet**):
+
+| Option | Idea | Trade-off |
+|---|---|---|
+| A | Keep UID 33; installer sets group + `setgid` on the projects folder | Small change, but users still have to understand the permission model |
+| B | Build images with the host's UID/GID as build args | Ownership just matches, nothing to explain — but images become machine-specific and cannot be shared or published prebuilt |
+| C | Keep the image generic, set `user:` at runtime in compose | Flexible, no rebuild — but files baked into the image are owned by the build-time user, which can break writes to paths inside the image |
+
+**Open questions:**
+
+- Do we ever want to publish prebuilt images (GHCR) to save users the ~15 minute
+  build? If yes, option B is ruled out.
+- Does anything need to run as real `www-data` specifically, or is that incidental?
+- macOS handling is different (Docker Desktop maps ownership automatically) — should
+  the two platforms behave differently, or pick one approach that works for both?
+
+---
+
+## 🟡 Quality and maintenance
+
+- [ ] **9. Node 19 is end-of-life** (support ended June 2023) → move to 22 or 24 LTS.
+      Files: `docker-library/php/8.3/Dockerfile:6`, `8.4/Dockerfile:6`
+
+- [ ] **10. The two PHP Dockerfiles are byte-identical** apart from the `FROM` line and
+      the `PHP_VERSION` arg. Every change has to be made twice.
+      → One Dockerfile driven by a build arg.
+
+- [ ] **11. The two Apache vhosts are near-identical** — they differ only by the SSL
+      block. PHP version routing must currently be edited in both files.
+      → Move the shared body into an `Include`d snippet.
+      Files: `devlocal.conf`, `devlocal_https.conf`
+
+- [ ] **12. The nginx variant is broken and unmaintained** — its Lua uses `[0-9]{2}`
+      and `\\.`, which are not valid Lua patterns, and its `gsub("--", "/")` does not
+      reverse the path segments the way the Apache version does. It is commented out
+      in compose, so nobody notices.
+      → Either fix it to match Apache's behaviour, or delete it.
+
+- [ ] **13. Replace commented-out services with compose `profiles:`** — Elasticsearch,
+      Kibana and nginx are large blocks of commented YAML that silently rot.
+      `profiles: [search]` keeps them opt-in *and* parsed.
+
+- [ ] **14. `php-fpm.conf` is dead config** — the active PHP handler selection lives in
+      the two vhosts. The `<IfDefine php83>` blocks in this file are never used.
+      File: `docker-library/httpd/config_files/php-fpm.conf`
+
+- [ ] **15. No automated checks** — nothing catches any of the above. A small CI job
+      running `docker compose config`, `shellcheck`, `hadolint`, and a boot + `curl`
+      smoke test would have caught most of the bugs already found.
+
+- [ ] **16. Consider publishing prebuilt images** to GHCR so users do not wait ~15
+      minutes on first run (compiles GD/intl/PECL, clones nvm, installs Node).
+      Note: this interacts with task 8 — see option B there.
+
+- [x] **17. `aliases.bash` uses `docker-compose` (v1)** — FIXED
+      Now uses `docker compose` (v2), matching the scripts. v1 is end-of-life and absent
+      on many systems. Done as part of task 3, since it was the same small file.
+      **Still open elsewhere:** `README.md` also tells users to run `docker-compose up -d`
+      in the install steps — that should be updated too.
+
+- [ ] **18. Replace the aliases with a real `forge` command** 💬 DISCUSS FIRST
+      Idea from the user: instead of shell aliases, ship a single executable so you can
+      run `forge start`, `forge stop`, `forge use 8.3`, `forge logs 8.4`.
+
+      Why it is better than aliases:
+      - Aliases only work in **bash**. zsh handles `forge:start` awkwardly and **fish
+        cannot use them at all** — so today the project silently excludes those users.
+      - No need to `source` anything from `~/.bashrc`.
+      - Can have `--help`, validate arguments, and give real error messages.
+      - Tab completion becomes possible.
+      - Adding a PHP version stops meaning "write two more aliases".
+
+      **Open questions:**
+      - Command shape: `forge use 8.3` / `forge exec 8.4`, or keep the old
+        `forge:use:php83` names for people already used to them?
+      - Where does it get installed — `~/.local/bin`, `/usr/local/bin`, a symlink created
+        by the installer (task 7), or just run `./forge` from the project?
+      - Delete `aliases.bash`, or keep it a while so existing users are not broken?
+      - Should the PHP versions be discovered from `docker-library/php/*/` instead of
+        being hardcoded, so a new version needs no code change?
+      - Plain bash script, or something else? (bash keeps it dependency-free)
+
+- [x] **20. PHP backend selection is now dynamic** — DONE
+      The vhosts enumerated every PHP version (`SetEnvIf` per version + an `<If>` per
+      version, duplicated across both vhosts). Adding PHP 8.5 meant editing four places.
+      → `resolve_docroot.lua` gained `set_php_handler`, run from `LuaHookFixups`. It
+      already parsed the host for the docroot, so it now also derives the backend:
+      `--pNN` wins, otherwise `PHP_VERSION` from `.env`. Each vhost is one line.
+      **Adding a PHP version is now just building the image — no config change.**
+
+      Tried first and rejected: `SetHandler "expr=..."`, which would be the natural
+      Apache way. It does not work for `proxy:` targets — not even with a fixed address;
+      Apache treats the whole string as a literal handler name. Verified on 2.4.68.
+
+      Security: the version comes from the Host header, so the Lua captures **exactly two
+      digits** and refuses anything else with a 500. A crafted host cannot inject into the
+      FastCGI address.
+
+      Verified: no suffix → PHP 8.4.24 (default), `--p84` → 8.4.24, `--p83` → **8.3.33**,
+      `--p99` → proxy error with no source leak, and the same over plain HTTP on port 80.
+      Empty/unset `PHP_VERSION` still stops the container from starting.
+
+- [x] **21. All comments and script output translated to English** — DONE
+      The scripts mixed Spanish and English. Everything user-facing and every comment is
+      now English, matching the README, so the project is usable by people who do not
+      read Spanish. Touched: `install_cert.sh`, `setup-local-dns.sh`, `aliases.bash`,
+      `.env`, `docker-compose.yml`, both vhosts, the Apache and PHP entrypoints, the
+      `xdebug` helper, `docker-php-ext-xdebug.ini`, and `docker-library/mkcert/Dockerfile`.
+      Comments were also shortened — the reasoning behind each fix lives in this file, not
+      in the source.
+      **Not touched:** the Spanish comments that were already in the original PHP and
+      Apache Dockerfiles (`# Instalar dependencias del sistema`, etc.). Converting those is
+      unrelated churn; worth doing in one pass if the project goes public.
+
+- [ ] **22. Multi-language messages (i18n)** 💬 DISCUSS FIRST — *deferred, not for now*
+      Idea from the user: let the scripts speak the user's language instead of only
+      English. Deliberately postponed until the current task list is finished.
+
+      **Open questions:**
+      - How is the language chosen — `$LANG` from the system, a `LANGUAGE=` setting in
+        `.env`, or a `--lang` flag?
+      - Where do the strings live? Plain bash has no gettext by default; options are a
+        `lang/es.sh` file of variables per language, or depending on `gettext`
+        (an extra dependency).
+      - Which languages to start with — Spanish and English only?
+      - Does this cover only the shell scripts, or the README too (`README.es.md`)?
+      - Fallback: any missing string must fall back to English rather than print a
+        variable name.
+

@@ -12,6 +12,17 @@
 
 local BASE = "/home/php-devforge/public_html"
 
+-- True for a directory or a symlink to one. Opening a directory succeeds but
+-- reading it does not, which is enough to tell them apart without extra libraries.
+local function is_dir(path)
+    local f = io.open(path, "r")
+    if not f then return false end
+    local ok = f:read(1)
+    f:close()
+    return ok == nil
+end
+
+
 local host = ngx.var.host
 local dev_domain = ngx.var.dev_domain
 local default_version = ngx.var.php_version
@@ -59,4 +70,11 @@ for i = #parts, 1, -1 do
     reversed[#reversed + 1] = parts[i]
 end
 
-ngx.var.docroot = BASE .. "/" .. table.concat(reversed, "/")
+-- sites/ is a shortcut: anything linked in there gets a short host name. Tried
+-- first, with the full path from the root as the fallback, so both
+--   mi-app.dominio                   -> sites/mi-app
+--   public--mi-app--projects.dominio -> projects/mi-app/public
+-- keep working.
+local path = table.concat(reversed, "/")
+local shortcut = BASE .. "/sites/" .. path
+ngx.var.docroot = is_dir(shortcut) and shortcut or (BASE .. "/" .. path)

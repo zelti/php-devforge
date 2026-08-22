@@ -196,6 +196,27 @@ jobs:
           test "$owner" = "$(id -u)" || { echo "owned by $owner, expected $(id -u)"; exit 1; }
           rm -f "$DIR/projects/my-app/public/written.txt"
 
+      # sites/ is a shortcut tried before the full path, and both must keep working.
+      - name: short and full paths both resolve
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+          forge link "$DIR/projects/my-app/public"
+          mkdir -p "$DIR/sites/api/v2"
+          printf '<?php echo "nested ok";' > "$DIR/sites/api/v2/index.php"
+          get() { curl -fsS -k --resolve "$1.phpforge.dev:443:127.0.0.1" "https://$1.phpforge.dev/"; }
+          get my-app                   | grep -q "my-app on PHP"   # sites/ shortcut
+          get v2--api                  | grep -q "nested ok"       # nested under sites/
+          get public--my-app--projects | grep -q "my-app on PHP"   # full path still works
+          get my-app--sites            | grep -q "my-app on PHP"   # long form still works
+          # forge link must produce a relative link: an absolute one resolves on the
+          # runner but points at nothing inside the containers.
+          case "$(readlink "$DIR/sites/my-app")" in
+            /*) echo "link is absolute; it will 404 inside the containers"; exit 1 ;;
+          esac
+          # and it must refuse a folder the containers cannot see
+          if forge link /tmp 2>/dev/null; then echo "should have refused /tmp"; exit 1; fi
+
       # Apache does not forward the Authorization header to FastCGI by itself;
       # php-fpm.conf adds it back. Removing that line breaks every Bearer token
       # and JWT silently, with nothing else looking wrong.

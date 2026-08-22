@@ -11,3 +11,4 @@
 /custom/php.d/*
 !/custom/php.d/.gitkeep
 /custom/*/Dockerfile
+/.env.backup

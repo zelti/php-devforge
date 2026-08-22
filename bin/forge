@@ -177,6 +177,43 @@ compose_service() {
     esac
 }
 
+# Publishing a project is making a symlink under sites/. Doing it by hand means
+# getting a relative path right from the wrong directory, which is easy to botch.
+cmd_link() {
+    need_env
+    local target="${1:-}" name="${2:-}"
+    [ -n "$target" ] || { err "usage: forge link <path-to-public-folder> [name]"; exit 1; }
+
+    local root; root="$(sed -ne 's/^PROJECTS_DIR=//p' .env)"
+    local abs; abs="$(cd "$target" 2>/dev/null && pwd)" || { err "No such folder: $target"; exit 1; }
+
+    # The containers only see PROJECTS_DIR, so a link out of it resolves to nothing.
+    case "$abs/" in
+        "$root"/*) ;;
+        *) err "That folder is outside $root, so the containers cannot reach it."; exit 1 ;;
+    esac
+
+    [ -f "$abs/index.php" ] || warn "No index.php there; the site will return 403."
+
+    # Frameworks all point at .../public, so the folder name is useless as a site
+    # name. Fall back to the project directory above it.
+    if [ -z "$name" ]; then
+        name="$(basename "$abs")"
+        case "$name" in
+            public|web|htdocs|public_html|www) name="$(basename "$(dirname "$abs")")" ;;
+        esac
+    fi
+    case "$name" in .*|*/*) err "Bad name: $name"; exit 1 ;; esac
+
+    mkdir -p "$root/sites"
+    # Relative, not absolute. The containers mount PROJECTS_DIR at a different path,
+    # so an absolute link resolves on the host and points at nothing inside.
+    # Both ends live under $root, so "../" plus the remainder is all it takes -- and
+    # it avoids `ln -r`, which macOS does not have.
+    ln -sfn "../${abs#"$root"/}" "$root/sites/$name"
+    info "https://${name}.$(sed -ne 's/^DEV_DOMAIN=//p' .env)"
+}
+
 cmd_certs() { need_env; ./install_cert.sh; }
 
 cmd_dns() {
@@ -203,6 +240,8 @@ PHP DevForge
   forge shell [version]        open a shell in a PHP container
   forge logs  [version]        follow a container's logs
 
+  forge link <folder> [name]   publish a project: symlinks it under sites/
+
   forge db list                which databases exist, and which are on
   forge db on|off <name>       turn one on or off
   forge mail on|off            a mail catcher at mail.<domain>
@@ -225,6 +264,7 @@ case "${1:-help}" in
     use)     shift; cmd_use "$@" ;;
     shell)   shift; cmd_shell "$@" ;;
     logs)    shift; cmd_logs "$@" ;;
+    link)    shift; cmd_link "$@" ;;
     db)      shift; cmd_db "$@" ;;
     mail)    shift; cmd_mail "$@" ;;
     images)  shift; cmd_images "$@" ;;

@@ -944,3 +944,39 @@ directly rather than only its README examples.
       Verified: PHP connects to both databases **by container name over the shared
       network**, mail sent from PHP over SMTP appears in the inbox, and the UI answers at
       `https://maildev.phpforge.dev`. CI covers all of it.
+
+- [x] **30. Short URLs via a sites/ shortcut** — DONE
+      Asked whether a single hyphen would make URLs prettier than `--`. It would, and it
+      would also make them ambiguous: `my-app-sites` has **three** readings
+      (`sites/my-app`, `app-sites/my`, `sites/app/my`) with no way to choose. That is
+      the bug fixed in task 7, reintroduced by design. Dots read best but break the
+      wildcard certificate — mkcert says so itself: *"X.509 wildcards only go one level
+      deep"*. So `--` is not an aesthetic choice; it is what keeps every site on one DNS
+      label so a single certificate covers them all.
+
+      The length came from the path, not the separator: `sites/` appeared in every URL.
+      Now `sites/` is a **shortcut tried first**, with the full path as the fallback, so
+      both work:
+
+      | URL | Serves |
+      |---|---|
+      | `my-app.<domain>` | `sites/my-app` |
+      | `v2--api.<domain>` | `sites/api/v2` |
+      | `public--my-app--projects.<domain>` | `projects/my-app/public` |
+
+      Implemented in both resolvers with an `is_dir` helper — opening a directory
+      succeeds but reading it fails, which distinguishes them without extra libraries and
+      works through symlinks.
+
+      **`forge link <folder> [name]`** publishes a project. Three things it gets right
+      that are easy to botch by hand:
+      - **Relative links.** The first version made them absolute: correct on the host,
+        pointing at nothing inside the containers, which mount the tree elsewhere.
+      - **The name.** `basename` gives `public` for every framework, so it falls back to
+        the project directory above it.
+      - **Refuses folders outside `PROJECTS_DIR`**, which the containers cannot see.
+
+      Considered and rejected: putting `sites/` inside the container's volume to keep the
+      host folder tidy. It lives at a root-only path, so `ls` and `rm` would stop working,
+      and `docker compose down -v` — a routine command — would silently delete every
+      published link while leaving the projects behind.

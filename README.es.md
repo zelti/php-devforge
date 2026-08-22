@@ -23,13 +23,21 @@ Un entorno PHP local donde **la estructura de carpetas es la configuración**.
 
 ```
 ~/php-devforge/sites/
-├── mi-app        →  https://mi-app--sites.phpforge.dev
-├── tienda        →  https://tienda--sites.phpforge.dev
-└── api/v2        →  https://v2--api--sites.phpforge.dev
+├── mi-app        →  https://mi-app.phpforge.dev
+├── tienda        →  https://tienda.phpforge.dev
+└── api/v2        →  https://v2--api.phpforge.dev
 ```
 
-El nombre del host es la ruta, invertida y unida con `--`. No hay nada que registrar
-ni que reiniciar. Creas una carpeta y recargas el navegador.
+Todo lo que esté bajo `sites/` está publicado, y el nombre del host es su ruta —
+invertida y unida con `--` cuando está anidada. No hay nada que registrar ni que
+reiniciar. Creas una carpeta y recargas el navegador.
+
+Publicar un proyecto que ya tienes es un comando:
+
+```bash
+forge link ~/php-devforge/projects/mi-app/public
+→ https://mi-app.phpforge.dev
+```
 
 **Cualquier versión de PHP, por petición:**
 
@@ -137,6 +145,7 @@ forge stop
 forge restart
 forge status                 # qué corre y cómo está configurado
 
+forge link ~/code/app/public # publicar un proyecto en app.<dominio>
 forge use 8.5                # cambiar la versión por defecto
 forge shell 8.4              # entrar a un contenedor
 forge logs 8.4               # seguir sus logs
@@ -168,8 +177,29 @@ Viven en la carpeta que elegiste al instalar (`PROJECTS_DIR` en `.env`,
 Dentro de los contenedores siempre es `/home/php-devforge/public_html`, que es donde
 miran Apache y PHP. Solo el lado del host es configurable.
 
-**Los enlaces simbólicos deben apuntar dentro de `PROJECTS_DIR`.** Los contenedores
-solo ven esa carpeta, así que un enlace a otro sitio no resuelve y da 404.
+**Dos formas de llegar al mismo proyecto.** `sites/` es un atajo: se prueba primero,
+y la ruta completa desde la raíz es el respaldo.
+
+| URL | Sirve |
+|---|---|
+| `mi-app.phpforge.dev` | `sites/mi-app` |
+| `v2--api.phpforge.dev` | `sites/api/v2` |
+| `public--mi-app--projects.phpforge.dev` | `projects/mi-app/public` |
+
+Así puedes publicar a propósito con un nombre corto, o llegar a cualquier carpeta por
+su ruta completa sin enlazar nada.
+
+**Para publicar:** `forge link <carpeta> [nombre]` crea el enlace por ti. Usa el nombre
+del proyecto cuando la carpeta se llama `public` (como en todos los frameworks), lo crea
+**relativo** para que también resuelva dentro de los contenedores, y rechaza una carpeta
+fuera de `PROJECTS_DIR` — los contenedores no ven nada más, así que ese enlace daría 404.
+
+A mano sería:
+
+```bash
+cd ~/php-devforge
+ln -s ../projects/mi-app/public sites/mi-app
+```
 
 No hace falta ningún `chown`: los contenedores adoptan tu identificador de usuario
 (`PUID`/`PGID` en `.env`), así que lo que crean es tuyo y `node_modules` se borra sin

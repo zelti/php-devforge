@@ -23,13 +23,21 @@ A local PHP environment where **the folder structure is the configuration**.
 
 ```
 ~/php-devforge/sites/
-├── my-app        →  https://my-app--sites.phpforge.dev
-├── shop          →  https://shop--sites.phpforge.dev
-└── api/v2        →  https://v2--api--sites.phpforge.dev
+├── my-app        →  https://my-app.phpforge.dev
+├── shop          →  https://shop.phpforge.dev
+└── api/v2        →  https://v2--api.phpforge.dev
 ```
 
-The host name is the path, reversed and joined with `--`. Nothing to register,
-nothing to restart. Add a folder, reload the browser.
+Anything under `sites/` is published, and the host name is its path — reversed and
+joined with `--` when it is nested. Nothing to register, nothing to restart. Add a
+folder, reload the browser.
+
+Publishing an existing project is one command:
+
+```bash
+forge link ~/php-devforge/projects/my-app/public
+→ https://my-app.phpforge.dev
+```
 
 **Any PHP version, per request:**
 
@@ -138,6 +146,7 @@ forge stop
 forge restart
 forge status                 # what is running, and how it is configured
 
+forge link ~/code/app/public # publish a project at app.<domain>
 forge use 8.5                # set the default PHP version
 forge shell 8.4              # open a shell in a container
 forge logs 8.4               # follow its logs
@@ -169,8 +178,30 @@ come from `docker-compose.yml` — add a service and `forge use 8.6` just works.
    Inside the containers this is always `/home/php-devforge/public_html`, which is
    where Apache and PHP look. Only the host side is configurable.
 
-   **Symlinks must point inside `PROJECTS_DIR`.** The containers only see that
-   folder, so a link to anywhere else resolves to nothing and returns 404.
+   **Two ways to reach the same project.** `sites/` is a shortcut: it is tried
+   first, and the full path from the root is the fallback.
+
+   | URL | Serves |
+   |---|---|
+   | `my-app.phpforge.dev` | `sites/my-app` |
+   | `v2--api.phpforge.dev` | `sites/api/v2` |
+   | `public--my-app--projects.phpforge.dev` | `projects/my-app/public` |
+
+   So you can publish deliberately with a short name, or reach any folder by its
+   full path without linking anything.
+
+   **Publishing:** `forge link <folder> [name]` creates the symlink for you. It uses
+   the project directory as the name when the folder is called `public` (as every
+   framework's is), makes the link **relative** so it resolves inside the containers
+   too, and refuses a folder outside `PROJECTS_DIR` — the containers see nothing
+   else, so such a link would 404.
+
+   By hand it is:
+
+   ```bash
+   cd ~/php-devforge
+   ln -s ../projects/my-app/public sites/my-app
+   ```
 
    No `chown` is needed. The PHP containers adopt your user id at startup
    (`PUID`/`PGID` in `.env`), so files they create belong to you and `node_modules`

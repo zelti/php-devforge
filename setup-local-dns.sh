@@ -135,11 +135,17 @@ do_install() {
     warn "To undo everything:  ./setup-local-dns.sh --remove"
 }
 
+# No require_domain: undoing has to work when .env is already gone, which is
+# exactly the state you are in while cleaning up.
 do_remove() {
-    require_domain
     require_sudo
     case "$(detect_backend)" in
         macos)
+            if [ -z "$DEV_DOMAIN" ]; then
+                err "Without DEV_DOMAIN in .env I cannot tell which resolver file is ours."
+                echo "  Remove it by hand:  sudo rm /etc/resolver/<your-domain>" >&2
+                exit 1
+            fi
             if [ -f "/etc/resolver/${DEV_DOMAIN}" ]; then
                 sudo rm -f "/etc/resolver/${DEV_DOMAIN}"
                 sudo dscacheutil -flushcache

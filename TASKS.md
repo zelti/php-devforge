@@ -481,9 +481,29 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       in compose, so nobody notices.
       → Either fix it to match Apache's behaviour, or delete it.
 
-- [ ] **13. Replace commented-out services with compose `profiles:`** — Elasticsearch,
-      Kibana and nginx are large blocks of commented YAML that silently rot.
-      `profiles: [search]` keeps them opt-in *and* parsed.
+- [x] **13. Replace commented-out services with compose `profiles:`** — DONE
+      Elasticsearch and Kibana were ~32 lines of commented YAML. Commented means invisible
+      to everything: `docker compose config` never reads it, CI never checks it, and it
+      rots unnoticed — which is precisely what happened to the nginx block.
+      → Both are now real services behind `profiles: ["search"]`. `docker compose up -d`
+      still starts exactly the same set; `docker compose --profile search up -d` adds them.
+
+      Fixed while uncommenting: Kibana's `SERVER_NAME` was `kibana.dev.local`, a domain
+      from an older naming scheme, now `kibana.${DEV_DOMAIN}`. Added the missing
+      `container_name`, `hostname` and `depends_on`, and restored the `dataes8143dev`
+      volume, which was commented out as well.
+
+      **CI now validates every profile** and asserts that none of them leak into the
+      default set — so an optional service can neither break silently nor start
+      unexpectedly.
+
+      **Not converted:** the commented nginx block in `docker-compose.yml`. That is task
+      12, which needs a decision first: fixing it or deleting it. Turning a broken service
+      into an easily-enabled profile would make it *more* likely to bite someone.
+
+      Left alone deliberately: `postgres16dev` still starts by default. Moving it behind a
+      profile would silently stop starting for people who rely on it — worth doing, but as
+      its own decision rather than smuggled into this one.
 
 - [x] **14. `php-fpm.conf` is dead config** — PARTLY. Deleting it would have broken
       token authentication.

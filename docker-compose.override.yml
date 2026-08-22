@@ -1,3 +1,12 @@
+# Optional services. Anything with a `profiles:` key is NOT started by
+# `docker compose up -d`; ask for it explicitly:
+#
+#   docker compose --profile search up -d
+#
+# They are real services rather than commented-out blocks so that
+# `docker compose config` and CI keep validating them. The nginx block that
+# rotted for years was commented out, which is exactly why nobody noticed.
+
 services:
   postgres16dev:
     image: postgres:16
@@ -12,40 +21,47 @@ services:
       - POSTGRES_USER=${USER_DEV}
       - POSTGRES_PASSWORD=${PASSWD_DEV}
 
-  # es8143dev:
-  #   image: docker.elastic.co/elasticsearch/elasticsearch:8.14.2
-  #   volumes:
-  #     - dataes8143dev:/usr/share/elasticsearch/data
+  # docker compose --profile search up -d
+  es8143dev:
+    profiles: ["search"]
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.2
+    container_name: es8143dev
+    hostname: ${USERNAME}-es8143dev
+    volumes:
+      - dataes8143dev:/usr/share/elasticsearch/data
+    environment:
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms1024m -Xmx1024m"
+      - "discovery.type=single-node"
+      # A dev box fills its disk; without these Elasticsearch goes read-only.
+      - cluster.routing.allocation.disk.watermark.low=95%
+      - cluster.routing.allocation.disk.watermark.high=97%
+      - cluster.routing.allocation.disk.watermark.flood_stage=98%
+      - cluster.info.update.interval=1m
+      - xpack.security.enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
 
-  #   container_name: es8143dev
-  #   hostname: ${USERNAME}-es8143dev
-  #   environment:
-  #     - bootstrap.memory_lock=true
-  #     - "ES_JAVA_OPTS=-Xms1024m -Xmx1024m"
-  #     - "discovery.type=single-node"
-  #     - cluster.routing.allocation.disk.watermark.low=95%
-  #     - cluster.routing.allocation.disk.watermark.high=97%
-  #     - cluster.routing.allocation.disk.watermark.flood_stage=98%
-  #     - cluster.info.update.interval=1m
-  #     - xpack.security.enabled=false
-  #   ulimits:
-  #     memlock:
-  #       soft: -1
-  #       hard: -1
-  #   restart: unless-stopped
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 2048M
-
-  # kibana:
-  #   image: docker.elastic.co/kibana/kibana:8.14.2
-  #   environment:
-  #     SERVER_NAME: kibana.dev.local
-  #     ELASTICSEARCH_HOSTS: http://es8143dev:9200
-  #   ports:
-  #     - 127.0.0.1:5601:5601
+  kibana:
+    profiles: ["search"]
+    image: docker.elastic.co/kibana/kibana:8.14.2
+    container_name: kibana
+    hostname: ${USERNAME}-kibana
+    depends_on:
+      - es8143dev
+    environment:
+      SERVER_NAME: kibana.${DEV_DOMAIN}
+      ELASTICSEARCH_HOSTS: http://es8143dev:9200
+    ports:
+      - 127.0.0.1:5601:5601
 
 volumes:
   datapostgres16dev:
-  #dataes8143dev:
+  dataes8143dev:

@@ -28,14 +28,18 @@ fix_owner() {
   fi
 }
 
-# nvm lives outside the home dir, so usermod does not fix it. Without this,
-# `nvm install` and global npm/pnpm packages fail.
-fix_owner "$NVM_DIR"
-
+# Do this first and keep it cheap. Apache starts in parallel in its own
+# container and needs to traverse this directory; anything slow before it is a
+# window where every request 403s.
 # public_html is the mounted host folder: never touch its ownership.
 chown php-devforge:php-devforge "$HOMEDIR" 2>/dev/null || true
-# Apache is a different uid and still has to traverse this to reach public_html.
 chmod 755 "$HOMEDIR" 2>/dev/null || true
+
+# nvm lives outside the home dir, so usermod does not fix it. Without this,
+# `nvm install` and global npm/pnpm packages fail. Recursive over tens of
+# thousands of files, so it runs after the bit Apache waits on.
+fix_owner "$NVM_DIR"
+
 find "$HOMEDIR" -mindepth 1 -maxdepth 1 ! -name public_html \
   -exec chown -R php-devforge:php-devforge {} + 2>/dev/null || true
 

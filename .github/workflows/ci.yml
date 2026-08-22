@@ -59,11 +59,20 @@ jobs:
       - name: start the stack
         run: |
           docker compose up -d apachedev php83dev php84dev
-          for i in $(seq 1 30); do
-            docker compose ps --status running --format '{{.Name}}' | grep -q apachedev && break
-            sleep 2
-          done
           docker compose ps
+          # "running" only means the process started. The PHP entrypoints still
+          # have setup to finish, and Apache serves in parallel, so wait for an
+          # actual answer instead.
+          for i in $(seq 1 60); do
+            if curl -fsS --max-time 5 --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
+                 https://welcome--sites.phpforge.dev/ >/dev/null 2>&1; then
+              echo "ready after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "still not serving after 60s"
+          docker compose logs --tail=30
+          exit 1
 
       - name: create a project with a hyphen in its name
         run: |

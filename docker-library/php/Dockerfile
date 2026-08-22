@@ -63,7 +63,8 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # Dev user with its own group. 1000/1000 is the usual first user on Linux, so
 # most hosts need no adjustment; the entrypoint fixes it via PUID/PGID otherwise.
 RUN groupadd -g 1000 php-devforge \
-    && useradd -u 1000 -g php-devforge -c "php dev" -m -d /home/php-devforge -s /bin/bash php-devforge
+    && useradd -u 1000 -g php-devforge -c "php dev" -m -d /home/php-devforge -s /bin/bash php-devforge \
+    && chmod 755 /home/php-devforge
 
 RUN echo 'php-devforge ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/php-devforge \
     && chmod 440 /etc/sudoers.d/php-devforge

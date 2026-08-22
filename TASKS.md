@@ -474,9 +474,32 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       the two vhosts. The `<IfDefine php83>` blocks in this file are never used.
       File: `docker-library/httpd/config_files/php-fpm.conf`
 
-- [ ] **15. No automated checks** — nothing catches any of the above. A small CI job
-      running `docker compose config`, `shellcheck`, `hadolint`, and a boot + `curl`
-      smoke test would have caught most of the bugs already found.
+- [x] **15. No automated checks** — DONE (first pass)
+      `.github/workflows/ci.yml`. Free and unlimited: the repository is public.
+      Two jobs:
+      - **lint** — `shellcheck --severity=warning` over every script, `hadolint` over the
+        Dockerfile at `error` threshold. Running it locally first found a real bug in
+        `install.sh` (SC1087: `"$p["` parsed as an array expansion) plus SC2155 in the
+        `xdebug` helper; both fixed.
+      - **install** — on a clean Ubuntu runner: `./install.sh --yes --skip-dns`, build,
+        `up -d`, then assertions. `--skip-dns` leaves the runner's resolver alone;
+        `curl --resolve` is used instead. Certificates are **not** skipped, so real TLS
+        against the system trust store is exercised.
+
+      Each check maps to a bug this session uncovered, so they cannot come back quietly:
+
+      | Check | Guards against |
+      |---|---|
+      | welcome page over HTTPS | the stack not starting at all |
+      | hyphenated project name | `mi-app--sites` resolving to `sites/app/mi` |
+      | `--p83` suffix | version routing regressions |
+      | `.php` never returns `<?php` | the source-code leak (HTTPS **and** plain HTTP) |
+      | file written by PHP is owned by the host uid | the permission model breaking |
+
+      **Follow-ups:** builds take ~15 min with no layer cache — worth adding, or better,
+      pulling published images once task 16 exists. macOS is not covered: GitHub's macOS
+      runners have no Docker daemon, so the macOS paths in `setup-local-dns.sh` and the
+      PUID/PGID behaviour stay unverified.
 
 - [ ] **16. Consider publishing prebuilt images** to GHCR so users do not wait ~15
       minutes on first run (compiles GD/intl/PECL, clones nvm, installs Node).

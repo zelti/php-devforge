@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["**.md", "LICENSE", "logo.png"]
+  pull_request:
+    paths-ignore: ["**.md", "LICENSE", "logo.png"]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Shell and Dockerfile lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck --severity=warning \
+            install.sh install_cert.sh setup-local-dns.sh aliases.bash \
+            docker-library/php/config_files/docker-php-entrypoint \
+            docker-library/php/config_files/xdebug \
+            docker-library/httpd/config_files/docker-entrypoint.sh
+
+      - name: hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: docker-library/php/Dockerfile
+          failure-threshold: error
+
+  install:
+    name: Install and serve on a clean machine
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: compose file parses
+        run: |
+          cp .env.example .env
+          docker compose config >/dev/null
+
+      # --skip-dns: the runner's resolver is left alone; curl --resolve is used
+      # instead. Certificates are not skipped, so real TLS is exercised.
+      - name: run the installer
+        run: ./install.sh --yes --skip-dns
+
+      - name: .env was written
+        run: |
+          grep -q '^PROJECTS_DIR=' .env
+          grep -q "^PUID=$(id -u)$" .env
+          grep -q "^PGID=$(id -g)$" .env
+
+      - name: build images
+        run: docker compose build php83dev php84dev apachedev
+
+      - name: start the stack
+        run: |
+          docker compose up -d apachedev php83dev php84dev
+          for i in $(seq 1 30); do
+            docker compose ps --status running --format '{{.Name}}' | grep -q apachedev && break
+            sleep 2
+          done
+          docker compose ps
+
+      - name: create a project with a hyphen in its name
+        run: |
+          DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+          mkdir -p "$DIR/projects/my-app/public"
+          printf '<?php echo "my-app on PHP ".PHP_VERSION."\\n";' \
+            > "$DIR/projects/my-app/public/index.php"
+          ln -sfn ../projects/my-app/public "$DIR/sites/my-app"
+
+      - name: the welcome page is served over HTTPS
+        run: |
+          curl -fsS --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
+            https://welcome--sites.phpforge.dev/ | tee /tmp/welcome.txt
+          grep -q "PHP DevForge is running" /tmp/welcome.txt
+
+      # Hyphens in project names were broken for a long time: mi-app--sites
+      # resolved to sites/app/mi.
+      - name: a hyphenated project name resolves
+        run: |
+          curl -fsS --resolve my-app--sites.phpforge.dev:443:127.0.0.1 \
+            https://my-app--sites.phpforge.dev/ | tee /tmp/app.txt
+          grep -q "my-app on PHP 8.4" /tmp/app.txt
+
+      - name: the URL suffix selects the PHP version
+        run: |
+          curl -fsS --resolve my-app--sites--p83.phpforge.dev:443:127.0.0.1 \
+            https://my-app--sites--p83.phpforge.dev/ | tee /tmp/p83.txt
+          grep -q "PHP 8.3" /tmp/p83.txt
+
+      # This one leaked source for every request that did not go through
+      # DirectoryIndex. Guard it so it cannot come back.
+      - name: PHP source is never served as text
+        run: |
+          for host in my-app--sites my-app--sites--p83 my-app--sites--p99; do
+            body="$(curl -sk --resolve $host.phpforge.dev:443:127.0.0.1 \
+              https://$host.phpforge.dev/index.php || true)"
+            if printf '%s' "$body" | grep -q '<?php'; then
+              echo "SOURCE LEAK on $host"; exit 1
+            fi
+          done
+          body="$(curl -s http://127.0.0.1/index.php -H 'Host: my-app--sites.phpforge.dev' || true)"
+          printf '%s' "$body" | grep -q '<?php' && { echo "SOURCE LEAK over plain HTTP"; exit 1; }
+          echo "no leaks"
+
+      # Files written by the container must belong to the host user, or
+      # node_modules cannot be deleted without sudo.
+      - name: files created in the container belong to the host user
+        run: |
+          DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+          printf '<?php file_put_contents(__DIR__."/written.txt","x");' \
+            > "$DIR/projects/my-app/public/write.php"
+          curl -fsS --resolve my-app--sites.phpforge.dev:443:127.0.0.1 \
+            https://my-app--sites.phpforge.dev/write.php >/dev/null
+          owner="$(stat -c %u "$DIR/projects/my-app/public/written.txt")"
+          test "$owner" = "$(id -u)" || { echo "owned by $owner, expected $(id -u)"; exit 1; }
+          rm -f "$DIR/projects/my-app/public/written.txt"
+
+      - name: container logs on failure
+        if: failure()
+        run: docker compose logs --tail=50

@@ -3,7 +3,8 @@ set -e
 
 [ "$DEBUG" == 'true' ] && set -x
 
-readonly PROGNAME=$(basename $0)
+PROGNAME=$(basename "$0")
+readonly PROGNAME
 readonly ARGS="$*"
 
 

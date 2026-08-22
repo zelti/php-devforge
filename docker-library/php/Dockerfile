@@ -41,19 +41,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     vim nano less \
     cron apt-transport-https ca-certificates mailutils iputils-ping \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" \
-    gd \
-    intl \
-    zip \
-    pdo_mysql \
-    pdo_pgsql \
-    soap \
-    xsl \
-    bcmath \
-    opcache \
-    mbstring \
-    exif \
-    pcntl \
+    && set -- gd intl zip pdo_mysql pdo_pgsql soap xsl bcmath mbstring exif pcntl \
+    # From PHP 8.5 opcache is compiled into the binary and the build no longer
+    # produces opcache.so, so docker-php-ext-install fails on it. Detected from
+    # the base image rather than passed in, so one Dockerfile still serves every
+    # version.
+    && if [ "$(php -r 'echo PHP_VERSION_ID;')" -lt 80500 ]; then set -- "$@" opcache; fi \
+    && docker-php-ext-install -j"$(nproc)" "$@" \
     && rm -rf /var/lib/apt/lists/*
 
 # Extensiones PECL

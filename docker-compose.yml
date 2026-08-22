@@ -124,6 +124,19 @@ services:
         NODE_VERSION: "${NODE_VERSION}"
     <<: *phpconfig_default
 
+  # Adding a version is this block and nothing else: one Dockerfile serves them
+  # all, and the vhosts pick the backend from the host name.
+  php85dev:
+    image: ghcr.io/zelti/php-devforge/php:8.5-dev
+    container_name: php85dev
+    hostname: ${USERNAME}-php85dev
+    build:
+      context: ./docker-library/php
+      args:
+        PHP_TAG: "8.5"
+        NODE_VERSION: "${NODE_VERSION}"
+    <<: *phpconfig_default
+
 
 volumes:
   dataphp-devforge:

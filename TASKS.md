@@ -598,7 +598,7 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       **Known wart:** the publish matrix lists each PHP version, so adding one means
       editing compose *and* that workflow. Worth generating from compose later.
 
-- [ ] **23. PHP 8.5 does not build** — opcache
+- [x] **23. PHP 8.5 does not build** — FIXED
       Adding the service was exactly what the refactoring promised: 13 lines in
       `docker-compose.yml`, no new Dockerfile, no vhost change. The image itself fails.
 
@@ -608,14 +608,32 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       and pcntl all build. It looks like opcache is no longer produced as a shared
       module in 8.5.
 
-      **To decide:** the Dockerfile is shared by every version, so the extension list
-      needs to vary by version. Options: a build arg listing extensions, dropping
-      opcache from the shared list and enabling it per version, or detecting at build
-      time whether the module was produced. Needs confirming against the PHP 8.5
-      changelog first — the diagnosis is empirical, not read from the release notes.
+      **Confirmed against the official PHP 8.5 UPGRADING notes**, not just measured:
+      *"The Opcache extension is now always built into the PHP binary and is always
+      loaded"* and *"the build does not produce opcache.so ... anymore"*.
 
-      `php85dev` was **removed from `docker-compose.yml` and from the publish workflow**
-      so `docker compose up -d` keeps working. Re-add both when the build is fixed.
+      **Fix:** the Dockerfile asks the base image for its own version, so one file still
+      serves every version — duplicating it would have undone task 10:
+
+      ```dockerfile
+      && set -- gd intl zip pdo_mysql pdo_pgsql soap xsl bcmath mbstring exif pcntl \
+      && if [ "$(php -r 'echo PHP_VERSION_ID;')" -lt 80500 ]; then set -- "$@" opcache; fi \
+      && docker-php-ext-install -j"$(nproc)" "$@"
+      ```
+
+      `set --` rather than a string variable, so nothing depends on word splitting and
+      hadolint stays clean without a new exception. Verified that Docker strips a `#`
+      comment placed inside a line continuation, so the explanation can sit next to the
+      condition.
+
+      The changelog also warns that `zend_extension=opcache.so` now emits a warning —
+      something the empirical test would not have revealed. Checked: no `.ini` in this
+      project loads it that way.
+
+      Verified: 8.3.33, 8.4.24 and 8.5.9 all build, all report opcache loaded, and
+      `--p83` / `--p84` / `--p85` route correctly **with no configuration change** —
+      adding 8.5 was 13 lines in compose, exactly what tasks 10 and 20 were for.
+      CI now builds all three versions and asserts both the routing and opcache.
 
 - [x] **17. `aliases.bash` uses `docker-compose` (v1)** — FIXED
       Now uses `docker compose` (v2), matching the scripts. v1 is end-of-life and absent

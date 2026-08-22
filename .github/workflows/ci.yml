@@ -71,11 +71,13 @@ jobs:
           grep -q "^PGID=$(id -g)$" .env
 
       - name: build images
-        run: docker compose build php83dev php84dev apachedev
+        # Every PHP version is built. 8.5 broke silently once: opcache became
+        # built-in and docker-php-ext-install started failing on it.
+        run: docker compose build php83dev php84dev php85dev apachedev
 
       - name: start the stack
         run: |
-          docker compose up -d apachedev php83dev php84dev
+          docker compose up -d apachedev php83dev php84dev php85dev
           docker compose ps
           # "running" only means the process started. The PHP entrypoints still
           # have setup to finish, and Apache serves in parallel, so wait for an
@@ -133,9 +135,21 @@ jobs:
 
       - name: the URL suffix selects the PHP version
         run: |
-          curl -fsS --resolve my-app--sites--p83.phpforge.dev:443:127.0.0.1 \
-            https://my-app--sites--p83.phpforge.dev/ | tee /tmp/p83.txt
-          grep -q "PHP 8.3" /tmp/p83.txt
+          for v in 83 84 85; do
+            host="my-app--sites--p${v}.phpforge.dev"
+            got="$(curl -fsS --resolve "$host:443:127.0.0.1" "https://$host/")"
+            echo "$got"
+            printf '%s' "$got" | grep -q "PHP ${v:0:1}.${v:1:1}" \
+              || { echo "expected PHP ${v:0:1}.${v:1:1}"; exit 1; }
+          done
+
+      - name: opcache is present in every version
+        run: |
+          for s in php83dev php84dev php85dev; do
+            got="$(docker compose exec -T "$s" php -r 'echo extension_loaded("Zend OPcache")?"yes":"no";')"
+            test "$got" = "yes" || { echo "$s: opcache missing"; exit 1; }
+            echo "$s ok"
+          done
 
       # This one leaked source for every request that did not go through
       # DirectoryIndex. Guard it so it cannot come back.

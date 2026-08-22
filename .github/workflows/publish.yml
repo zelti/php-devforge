@@ -30,6 +30,10 @@ jobs:
             context: ./docker-library/php
             args: PHP_TAG=8.4
             tag: php:8.4-dev
+          - name: php
+            context: ./docker-library/php
+            args: PHP_TAG=8.5
+            tag: php:8.5-dev
           - name: apache
             context: ./docker-library/httpd
             args: ""

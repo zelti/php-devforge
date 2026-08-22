@@ -184,6 +184,12 @@ LOCALEOF
     info "docker-compose.local.yml created (yours, ignored by git)"
 fi
 
+# Listed only once the file exists, since compose errors on a missing one.
+# Anchored to the setting: the comment above it in .env.example mentions the file too.
+if ! grep -q '^COMPOSE_FILE=.*docker-compose\.local\.yml' .env 2>/dev/null; then
+    sed -i 's|^COMPOSE_FILE=\(.*\)$|COMPOSE_FILE=\1:docker-compose.local.yml|' .env
+fi
+
 mkdir -p custom/php.d
 if [ ! -f custom/php.d/README.md ]; then
     cat > custom/php.d/README.md <<'INIEOF'

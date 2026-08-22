@@ -787,6 +787,14 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       - `docker-compose.local.yml` — appended to `COMPOSE_FILE`, so it loads
         automatically. Verified by adding a Redis service that answered `PONG`.
         Compose **errors on a file listed but missing**, so the installer creates it.
+
+        **CI caught a bootstrap bug here**, and it would have hit real users: the file
+        was listed in `.env.example`, but it is gitignored, so a fresh checkout that
+        copied `.env.example` to `.env` could not run `docker compose config` at all.
+        Now `.env.example` omits it and the installer appends it right after creating
+        the file. The first attempt at that fix was itself wrong — the guard grepped for
+        the filename anywhere in `.env` and matched the explanatory comment, so the
+        append never ran. Anchored to `^COMPOSE_FILE=` instead.
       - The `FROM ghcr.io/.../php:8.4-dev` pattern for extra extensions, documented in
         the README: a few lines that keep inheriting upstream fixes.
 

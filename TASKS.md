@@ -598,6 +598,17 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       **Known wart:** the publish matrix lists each PHP version, so adding one means
       editing compose *and* that workflow. Worth generating from compose later.
 
+      **Caught after the fact:** publishing images quietly broke `NODE_VERSION` in `.env`.
+      It is a *build* arg, so a pulled image already has Node fixed and the setting does
+      nothing for anyone who does not build locally — it used to work only because
+      everybody built. The comment in `.env.example` now says so plainly, and the publish
+      workflow reads `NODE_VERSION` from `.env.example` so the published default cannot
+      drift from what the file documents.
+
+      The same applies to anything else baked at build time: it is configurable for people
+      who build, fixed for people who pull. Worth remembering before adding another
+      build arg to `.env`.
+
 - [x] **23. PHP 8.5 does not build** — FIXED
       Adding the service was exactly what the refactoring promised: 13 lines in
       `docker-compose.yml`, no new Dockerfile, no vhost change. The image itself fails.

@@ -275,6 +275,39 @@ jobs:
           getent hosts github.com >/dev/null || { echo "DNS broken after removal"; exit 1; }
           echo "clean"
 
+      # Databases and mail are only useful if PHP can actually reach them, which is
+      # a shared-network question rather than a compose-syntax one.
+      - name: databases and mail are reachable from PHP
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          forge db on pg18
+          forge db on mariadb12
+          forge mail on
+          for i in $(seq 1 40); do
+            docker compose exec -T postgres18dev pg_isready -q 2>/dev/null \
+              && docker compose exec -T mariadb12dev mariadb-admin ping --silent 2>/dev/null \
+              && break
+            sleep 3
+          done
+          docker compose exec -T php84dev php -r '
+            $u = getenv("USER_DEV") ?: "php-devforge"; $p = "php-devforge01";
+            new PDO("pgsql:host=postgres18dev;port=5432;dbname=$u", $u, $p);
+            new PDO("mysql:host=mariadb12dev;port=3306;dbname=$u", $u, $p);
+            echo "both databases reachable\n";'
+          # Mail: sent over SMTP from PHP, read back through the web UI.
+          docker compose exec -T php84dev php -r '
+            $s = fsockopen("maildev", 1025, $e, $es, 5) or exit(1);
+            fgets($s);
+            foreach (["EHLO ci","MAIL FROM:<a@ci.test>","RCPT TO:<b@ci.test>","DATA"] as $c) {
+                fwrite($s, "$c\r\n"); fgets($s);
+            }
+            fwrite($s, "Subject: ci-probe\r\n\r\nbody\r\n.\r\n"); fgets($s);
+            fwrite($s, "QUIT\r\n");'
+          sleep 3
+          curl -fsS -k --resolve maildev.phpforge.dev:443:127.0.0.1 \
+            "https://maildev.phpforge.dev/api/v1/messages?limit=5" | grep -q ci-probe
+          echo "mail captured and served at maildev.<domain>"
+
       # nginx sat commented out and broken since the first commit precisely because
       # nothing exercised it. It is an alternative to Apache, not an addition: both
       # want ports 80 and 443.

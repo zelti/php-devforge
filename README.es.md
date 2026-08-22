@@ -289,6 +289,40 @@ y la caché de Docker hace que no cueste nada cuando no hay cambios.
 **Ojo:** lo que se fija al construir la imagen — `NODE_VERSION`, por ejemplo — solo
 aplica si construyes. Una imagen descargada ya lo trae fijado.
 
+## 🗄️ Bases de datos y correo
+
+No arranca nada que no elijas. El instalador pregunta; después:
+
+```bash
+forge db list              # cuáles existen y cuáles están encendidas
+forge db on pg18
+forge db off mariadb12
+forge mail on              # capturador de correo en maildev.<dominio>
+```
+
+| Nombre | Imagen | Puerto en tu máquina |
+|---|---|---|
+| `pg16` `pg17` `pg18` | postgres 16 / 17 / 18 | 5416 / 5417 / 5418 |
+| `mariadb11` `mariadb12` | mariadb 11.8 LTS / 12 | 3311 / 3312 |
+| `mail` | Mailpit | interfaz en `https://maildev.<dominio>` |
+
+Los puertos codifican la versión, así que varias pueden convivir — útil para probar
+una migración contra la versión que usarás en producción.
+
+**Desde tu código**, se alcanzan por el nombre del contenedor en la red compartida:
+
+```php
+new PDO("pgsql:host=postgres18dev;port=5432;dbname=php-devforge", $user, $pass);
+new PDO("mysql:host=mariadb12dev;port=3306;dbname=php-devforge", $user, $pass);
+```
+
+Las credenciales son `USER_DEV` / `PASSWD_DEV` del `.env`. Los puertos de arriba son
+para tus propias herramientas: un cliente gráfico, `psql`, un script de migración.
+
+**Correo**: apunta el SMTP de tu framework a `maildev:1025`, sin autenticación ni TLS.
+Todo lo enviado se captura y se ve en `https://maildev.<dominio>`; nada sale de tu
+máquina.
+
 ## 🧩 Servicios opcionales
 
 Algunos no se levantan por defecto. Llevan un `profile` de compose, así que los pides

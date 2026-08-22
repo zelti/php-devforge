@@ -16,7 +16,7 @@ err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 title() { echo -e "\n${BLUE}$1${NC}"; }
 
 ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0; SKIP_LINK=0
-OPT_DOMAIN=""; OPT_DIR=""; OPT_PHP=""; OPT_DNS_PORT=""; OPT_IMAGES=""
+OPT_DOMAIN=""; OPT_DIR=""; OPT_PHP=""; OPT_DNS_PORT=""; OPT_IMAGES=""; OPT_PROFILES=""
 
 usage() {
     cat <<EOF
@@ -29,6 +29,7 @@ Usage: $0 [OPTIONS]
   --php=83|84           default PHP version (default: 84)
   --dns-port=N          port for the local DNS (default: first free one)
   --images=pull|build   use the published images, or build your own (default: pull)
+  --profiles=a,b        databases and extras to enable, e.g. pg18,mariadb12,mail
   --skip-link           do not put `forge` on your PATH
   --skip-cert           do not generate certificates
   --skip-dns            do not touch the system DNS
@@ -46,6 +47,7 @@ for arg in "$@"; do
         --php=*)          OPT_PHP="${arg#*=}" ;;
         --dns-port=*)     OPT_DNS_PORT="${arg#*=}" ;;
         --images=*)       OPT_IMAGES="${arg#*=}" ;;
+        --profiles=*)     OPT_PROFILES="${arg#*=}" ;;
         --skip-link)      SKIP_LINK=1 ;;
         --skip-cert)      SKIP_CERT=1 ;;
         --skip-dns)       SKIP_DNS=1 ;;
@@ -164,6 +166,7 @@ sed -e "s|^DEV_DOMAIN=.*|DEV_DOMAIN=${DOMAIN}|" \
     -e "s|^PUID=.*|PUID=${PUID_V}|" \
     -e "s|^PGID=.*|PGID=${PGID_V}|" \
     -e "s|^IMAGE_MODE=.*|IMAGE_MODE=${IMAGE_MODE_V}|" \
+    -e "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${PROFILES}|" \
     .env.example > .env
 info ".env written"
 
@@ -221,6 +224,34 @@ echo "      sites/     symlinks to each project's public folder"
 echo "      sites/welcome  a test page"
 
 # ---------- optional steps ----------
+# ---------- databases and mail ----------
+# Both are compose profiles, so this just builds COMPOSE_PROFILES.
+title "Databases and mail"
+echo "  Nothing is started unless you pick it. You can change this later with"
+echo "  'forge db on|off <name>' and 'forge mail on|off'."
+echo ""
+echo "  Databases available: $(docker compose config --profiles 2>/dev/null | grep -E '^(pg|mariadb)' | tr '\n' ' ')"
+
+PROFILES=""
+if [ -n "$OPT_PROFILES" ]; then
+    PROFILES="$OPT_PROFILES"
+else
+    DBS="$(ask "Which databases? (space separated, or none)" "${COMPOSE_PROFILES:-none}")"
+    case "$DBS" in none|"") DBS="" ;; esac
+    for d in $DBS; do
+        d="${d//,/}"
+        [ -z "$d" ] && continue
+        if docker compose config --profiles 2>/dev/null | grep -qx "$d"; then
+            PROFILES="${PROFILES:+$PROFILES,}$d"
+        else
+            warn "Unknown database '$d', skipped"
+        fi
+    done
+    if confirm "Catch outgoing mail at maildev.${DOMAIN}?"; then
+        PROFILES="${PROFILES:+$PROFILES,}mail"
+    fi
+fi
+
 # ---------- forge on PATH ----------
 # A symlink, not a copy, so `git pull` updates the command too.
 title "The forge command"

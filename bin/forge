@@ -85,6 +85,24 @@ cmd_logs() {
     docker compose logs -f "php${v}dev"
 }
 
+cmd_mail() {
+    need_env
+    local keep; keep="$(enabled_profiles | grep -vx mail || true)"
+    case "${1:-status}" in
+        on)  write_profiles $keep mail
+             docker compose up -d
+             info "Mail catcher at https://maildev.$(sed -ne 's/^DEV_DOMAIN=//p' .env)"
+             echo "  Point your app's SMTP at maildev:1025 (no auth, no TLS)" ;;
+        off) write_profiles $keep
+             docker compose stop maildev 2>/dev/null || true
+             docker compose up -d
+             info "Mail catcher off" ;;
+        status|"")
+             if enabled_profiles | grep -qx mail; then echo "  mail: ON"; else echo "  mail: off"; fi ;;
+        *) err "forge mail [on|off|status]"; exit 1 ;;
+    esac
+}
+
 cmd_images() {
     need_env
     case "${1:-}" in
@@ -98,6 +116,66 @@ cmd_images() {
 }
 
 cmd_install() { ./install.sh "$@"; }
+
+# Databases are compose profiles listed in COMPOSE_PROFILES, so `forge db` just
+# edits that line. Nothing here enumerates them: the list comes from the compose
+# files, so adding postgres 19 means adding a service and nothing else.
+db_profiles() {
+    docker compose config --profiles 2>/dev/null \
+        | grep -E '^(pg[0-9]+|mariadb[0-9]+)$' | sort || true
+}
+
+enabled_profiles() {
+    sed -ne 's/^COMPOSE_PROFILES=//p' .env 2>/dev/null | tr ',' '\n' | grep -v '^$' || true
+}
+
+write_profiles() {
+    local joined; joined="$(printf '%s\n' "$@" | grep -v '^$' | sort -u | paste -sd, - || true)"
+    if grep -q '^COMPOSE_PROFILES=' .env; then
+        sed -i "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${joined}|" .env
+    else
+        printf '\nCOMPOSE_PROFILES=%s\n' "$joined" >> .env
+    fi
+}
+
+cmd_db() {
+    need_env
+    local action="${1:-list}" name="${2:-}"
+    case "$action" in
+        list)
+            local on; on="$(enabled_profiles | tr '\n' ' ')"
+            echo "  available:"
+            db_profiles | while read -r p; do
+                case " $on " in *" $p "*) echo "    $p  ON" ;; *) echo "    $p  off" ;; esac
+            done
+            ;;
+        on|off)
+            [ -n "$name" ] || { err "which one? try: forge db list"; exit 1; }
+            db_profiles | grep -qx "$name" || {
+                err "Unknown database: $name"
+                echo "  available: $(db_profiles | tr '\n' ' ')" >&2; exit 1; }
+            local keep; keep="$(enabled_profiles | grep -vx "$name" || true)"
+            if [ "$action" = "on" ]; then
+                write_profiles $keep "$name"; info "$name enabled"
+            else
+                write_profiles $keep
+                docker compose stop "$(compose_service "$name")" 2>/dev/null || true
+                info "$name disabled"
+            fi
+            docker compose up -d
+            ;;
+        *) err "forge db [list|on <name>|off <name>]"; exit 1 ;;
+    esac
+}
+
+# pg18 -> postgres18dev, mariadb12 -> mariadb12dev
+compose_service() {
+    case "$1" in
+        pg*)      echo "postgres${1#pg}dev" ;;
+        mariadb*) echo "${1}dev" ;;
+        *)        echo "$1" ;;
+    esac
+}
 
 cmd_certs() { need_env; ./install_cert.sh; }
 
@@ -125,6 +203,10 @@ PHP DevForge
   forge shell [version]        open a shell in a PHP container
   forge logs  [version]        follow a container's logs
 
+  forge db list                which databases exist, and which are on
+  forge db on|off <name>       turn one on or off
+  forge mail on|off            a mail catcher at maildev.<domain>
+
   forge images build|pull      build images locally, or use the published ones
   forge certs                  regenerate the HTTPS certificates
   forge dns [setup|status|test|remove]
@@ -143,6 +225,8 @@ case "${1:-help}" in
     use)     shift; cmd_use "$@" ;;
     shell)   shift; cmd_shell "$@" ;;
     logs)    shift; cmd_logs "$@" ;;
+    db)      shift; cmd_db "$@" ;;
+    mail)    shift; cmd_mail "$@" ;;
     images)  shift; cmd_images "$@" ;;
     certs)   shift; cmd_certs ;;
     dns)     shift; cmd_dns "$@" ;;

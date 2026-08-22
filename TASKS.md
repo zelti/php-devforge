@@ -896,3 +896,40 @@ state, a TUI — where `clap` would earn its keep.
 Verified from `/tmp`, outside the checkout: `forge use 8.5` changed `.env` **and the
 site served PHP 8.5.9**; `forge use 84` switched back. CI exercises the command
 directly rather than only its README examples.
+
+- [x] **29. Databases you choose, and a mail catcher** — DONE
+      PostgreSQL 16 was the only database, it always started, and it was two majors
+      behind. Meanwhile `pdo_mysql` was compiled into every PHP image with **no MySQL
+      service to talk to** — a bigger inconsistency than the always-on question.
+
+      Measured before deciding whether to make it optional: Postgres idles at **17 MB**,
+      not the 100+ assumed. That is too little to justify breaking startup for people who
+      rely on it — so the answer was not "hide it behind a profile" but "offer more, start
+      none".
+
+      Five databases now, each behind its own profile, **none running by default**:
+      postgres 16/17/18 on ports 5416/5417/5418, mariadb 11.8 LTS and 12 on 3311/3312.
+      Ports encode the version so several can run at once. Selected during install, or
+      with `forge db list|on|off`, which edits `COMPOSE_PROFILES` in `.env` — verified
+      that compose honours that variable from `.env`, including comma-separated values.
+
+      **Mail catcher** (Mailpit) behind the `mail` profile, served at
+      `maildev.<domain>` so there is no port to remember. `forge mail on|off`.
+
+      Three things that only surfaced by running it:
+      - **PostgreSQL 18 changed its mount point.** 16 and 17 take
+        `/var/lib/postgresql/data`; 18 wants `/var/lib/postgresql` and refuses to start
+        otherwise. It would have shipped broken.
+      - **Apache picks the first vhost that matches, in load order — not the most
+        specific.** `maildev.conf` lost to `devlocal_https.conf`'s
+        `ServerAlias *.${DEV_DOMAIN}`, so the Lua looked for a folder called `maildev`
+        and returned 404. Renamed to `010-maildev.conf` to load first. nginx does not
+        have this problem: it prefers an exact `server_name` over a regex regardless of
+        order.
+      - **`set -e` plus `grep` bit again** in `forge db list`: with no
+        `COMPOSE_PROFILES` line yet, the grep found nothing, exited 1, and killed the
+        command silently. Same trap as the installer's `.env` guard.
+
+      Verified: PHP connects to both databases **by container name over the shared
+      network**, mail sent from PHP over SMTP appears in the inbox, and the UI answers at
+      `https://maildev.phpforge.dev`. CI covers all of it.

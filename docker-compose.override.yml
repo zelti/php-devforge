@@ -1,27 +1,112 @@
-# Optional services. Anything with a `profiles:` key is NOT started by
-# `docker compose up -d`; ask for it explicitly:
+# Optional services. Nothing here starts unless you ask for it.
 #
-#   docker compose --profile search up -d
+# Databases are selected during ./install.sh, or with:
 #
-# They are real services rather than commented-out blocks so that
-# `docker compose config` and CI keep validating them. The nginx block that
-# rotted for years was commented out, which is exactly why nobody noticed.
+#   forge db on pg18        forge db off pg18        forge db list
+#
+# which edits COMPOSE_PROFILES in .env. They are real service definitions rather
+# than commented-out blocks, so `docker compose config` and CI keep validating them.
+#
+# Ports encode the version, so several can run side by side:
+#   postgres 16/17/18 -> 5416 / 5417 / 5418
+#   mariadb  11/12    -> 3311 / 3312
+#
+# All of them use USER_DEV / PASSWD_DEV from .env.
 
 services:
   postgres16dev:
+    profiles: ["pg16"]
     image: postgres:16
     shm_size: 1gb
-    ports:
-      - 127.0.0.1:5439:5432
     container_name: postgres16dev
     hostname: ${USERNAME}-postgres16dev
+    ports:
+      - 127.0.0.1:5416:5432
     volumes:
       - datapostgres16dev:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=${USER_DEV}
       - POSTGRES_PASSWORD=${PASSWD_DEV}
 
-  # docker compose --profile search up -d
+  postgres17dev:
+    profiles: ["pg17"]
+    image: postgres:17
+    shm_size: 1gb
+    container_name: postgres17dev
+    hostname: ${USERNAME}-postgres17dev
+    ports:
+      - 127.0.0.1:5417:5432
+    volumes:
+      - datapostgres17dev:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=${USER_DEV}
+      - POSTGRES_PASSWORD=${PASSWD_DEV}
+
+  postgres18dev:
+    profiles: ["pg18"]
+    image: postgres:18
+    shm_size: 1gb
+    container_name: postgres18dev
+    hostname: ${USERNAME}-postgres18dev
+    ports:
+      - 127.0.0.1:5418:5432
+    volumes:
+      # 18 changed this: the image wants a single mount at /var/lib/postgresql and
+      # puts the data in a subdirectory, so pg_upgrade --link can work later.
+      # Mounting .../data as 16 and 17 do makes it refuse to start.
+      - datapostgres18dev:/var/lib/postgresql
+    environment:
+      - POSTGRES_USER=${USER_DEV}
+      - POSTGRES_PASSWORD=${PASSWD_DEV}
+
+  # 11.8 is the current LTS; 12 is the newer stable line.
+  mariadb11dev:
+    profiles: ["mariadb11"]
+    image: mariadb:11.8
+    container_name: mariadb11dev
+    hostname: ${USERNAME}-mariadb11dev
+    ports:
+      - 127.0.0.1:3311:3306
+    volumes:
+      - datamariadb11dev:/var/lib/mysql
+    environment:
+      - MARIADB_USER=${USER_DEV}
+      - MARIADB_PASSWORD=${PASSWD_DEV}
+      - MARIADB_ROOT_PASSWORD=${PASSWD_DEV}
+      - MARIADB_DATABASE=${USER_DEV}
+
+  mariadb12dev:
+    profiles: ["mariadb12"]
+    image: mariadb:12.0
+    container_name: mariadb12dev
+    hostname: ${USERNAME}-mariadb12dev
+    ports:
+      - 127.0.0.1:3312:3306
+    volumes:
+      - datamariadb12dev:/var/lib/mysql
+    environment:
+      - MARIADB_USER=${USER_DEV}
+      - MARIADB_PASSWORD=${PASSWD_DEV}
+      - MARIADB_ROOT_PASSWORD=${PASSWD_DEV}
+      - MARIADB_DATABASE=${USER_DEV}
+
+  # Catches every mail your projects send, instead of delivering it. The web UI is
+  # served at maildev.${DEV_DOMAIN} by the Apache/nginx vhost, so there is no port
+  # to remember.
+  #
+  #   forge db is for databases; this one:  forge mail on / off
+  #
+  # From PHP, point your framework's SMTP settings at maildev:1025 (no auth, no TLS).
+  maildev:
+    profiles: ["mail"]
+    image: axllent/mailpit:latest
+    container_name: maildev
+    hostname: ${USERNAME}-maildev
+    environment:
+      - MP_SMTP_AUTH_ACCEPT_ANY=1
+      - MP_SMTP_AUTH_ALLOW_INSECURE=1
+    restart: unless-stopped
+
   es8143dev:
     profiles: ["search"]
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.2
@@ -64,4 +149,8 @@ services:
 
 volumes:
   datapostgres16dev:
+  datapostgres17dev:
+  datapostgres18dev:
+  datamariadb11dev:
+  datamariadb12dev:
   dataes8143dev:

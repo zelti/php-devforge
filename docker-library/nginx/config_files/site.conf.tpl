@@ -19,6 +19,27 @@ gzip_vary on;
 # The backend used to be picked by a map listing every version, which meant editing
 # this file to add one. resolve_docroot.lua sets it from the host instead.
 
+# Mail catcher UI. nginx prefers an exact server_name over a regex one regardless
+# of order, so this wins over the wildcard below without needing a load-order trick
+# the way Apache does.
+server {
+    listen 80;
+    listen 443 ssl;
+    http2 on;
+    server_name maildev.${DEV_DOMAIN};
+    ssl_certificate     /etc/nginx/ssl/php-devforge.pem;
+    ssl_certificate_key /etc/nginx/ssl/php-devforge.key;
+    location / {
+        resolver 127.0.0.11 ipv6=off valid=10s;
+        set $mail "maildev:8025";
+        proxy_pass http://$mail;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
 server {
     listen 80;
     server_name ~^(?<subdomains>.+)\.${DEV_DOMAIN}$;

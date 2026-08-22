@@ -455,10 +455,25 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       `depends_on` entries and the container names, and the short form already matches the
       URL convention (`--p84`).
 
-- [ ] **11. The two Apache vhosts are near-identical** — they differ only by the SSL
-      block. PHP version routing must currently be edited in both files.
-      → Move the shared body into an `Include`d snippet.
-      Files: `devlocal.conf`, `devlocal_https.conf`
+- [x] **11. The two Apache vhosts are near-identical** — FIXED
+      A diff showed they differed in exactly two things: the port, and the TLS block.
+      Everything else — 37 lines — was duplicated, so every routing change had to be
+      made twice and could silently drift.
+      → Shared body extracted to `/etc/apache2/snippets/devlocal-common.conf`, included
+      from both. 93 lines → 56, and `devlocal.conf` is now three lines.
+
+      Two things removed while extracting:
+      - `Define DEFAULT_DOCUMENT_ROOT`, replaced with the literal path. Defining the same
+        variable from two includes would warn, and the indirection bought nothing for a
+        value used once.
+      - The `<IfModule mod_lua.c>` / `<IfModule !mod_lua.c>` pair. It was already dead:
+        `LuaHookFixups` sits outside any guard (deliberately, task 20), so Apache cannot
+        start without mod_lua anyway. The snippet now says so explicitly instead of
+        pretending there is a fallback.
+
+      Verified on both vhosts: `configtest` passes, the port 80 vhost picks up
+      `ServerName` from the include, and HTTPS **and** plain HTTP serve the welcome page,
+      a hyphenated project, `--p83` version selection, and no source leak.
 
 - [ ] **12. The nginx variant is broken and unmaintained** — its Lua uses `[0-9]{2}`
       and `\\.`, which are not valid Lua patterns, and its `gsub("--", "/")` does not

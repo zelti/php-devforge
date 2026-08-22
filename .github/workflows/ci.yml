@@ -148,6 +148,62 @@ jobs:
           test "$owner" = "$(id -u)" || { echo "owned by $owner, expected $(id -u)"; exit 1; }
           rm -f "$DIR/projects/my-app/public/written.txt"
 
+      # Everything above proves the stack works, using curl --resolve. From here
+      # the system resolver is configured for real, so a failure below points at
+      # setup-local-dns.sh and nothing else.
+      - name: configure the system DNS
+        run: |
+          ./setup-local-dns.sh
+          ./setup-local-dns.sh --status
+
+      - name: the domain resolves through the system resolver
+        run: |
+          got="$(getent hosts welcome--sites.phpforge.dev | awk '{print $1}')"
+          test "$got" = "127.0.0.1" || { echo "got '$got', expected 127.0.0.1"; exit 1; }
+          # A wildcard, so any subdomain must work without being listed anywhere.
+          got="$(getent hosts anything--at--all.phpforge.dev | awk '{print $1}')"
+          test "$got" = "127.0.0.1" || { echo "wildcard failed: '$got'"; exit 1; }
+
+      - name: the rest of DNS is untouched
+        run: |
+          for h in github.com debian.org; do
+            got="$(getent hosts $h | awk '{print $1; exit}')"
+            test -n "$got" || { echo "$h does not resolve"; exit 1; }
+            echo "$h -> $got"
+          done
+
+      # The old script wrote Domains=~., sending every query on the machine
+      # through the container. Stopping the stack then killed all DNS.
+      - name: internet still works with dnsmasq stopped
+        run: |
+          docker compose stop dnsmasq
+          sudo resolvectl flush-caches || true
+          for h in github.com debian.org; do
+            got="$(getent hosts $h | awk '{print $1; exit}')"
+            test -n "$got" || { echo "FAIL: $h stopped resolving"; exit 1; }
+          done
+          echo "internet survived"
+          docker compose start dnsmasq
+          sleep 3
+
+      # No --resolve here: this is the path a browser actually takes.
+      - name: serve over the real DNS path
+        run: |
+          for i in $(seq 1 20); do
+            curl -fsS --max-time 5 https://welcome--sites.phpforge.dev/ >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS https://welcome--sites.phpforge.dev/ | grep -q "PHP DevForge is running"
+          curl -fsS https://my-app--sites.phpforge.dev/ | grep -q "my-app on PHP 8.4"
+          curl -fsS https://my-app--sites--p83.phpforge.dev/ | grep -q "PHP 8.3"
+
+      - name: --remove undoes it
+        run: |
+          ./setup-local-dns.sh --remove
+          test ! -f /etc/systemd/resolved.conf.d/50-php-devforge.conf
+          getent hosts github.com >/dev/null || { echo "DNS broken after removal"; exit 1; }
+          echo "clean"
+
       - name: container logs on failure
         if: failure()
         run: docker compose logs --tail=50

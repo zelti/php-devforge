@@ -111,7 +111,8 @@ Y abre **https://welcome--sites.phpforge.dev**.
    Para uso desatendido:
    ```bash
    ./install.sh --yes --domain=midominio.dev --projects-dir=~/code
-   ./install.sh --help        # todas las opciones
+   ./install.sh --yes --profiles=pg18,mail    # bases de datos y correo, desatendido
+   ./install.sh --help                        # todas las opciones
    ```
 
    Nada necesita `sudo` salvo el paso del DNS, y solo si lo aceptas.
@@ -337,10 +338,23 @@ Los perfiles son cosa de compose, así que este sigue siendo un comando de
 
 | Perfil | Servicios | Notas |
 |---|---|---|
-| *(ninguno)* | apachedev, php83dev, php84dev, php85dev, dnsmasq, postgres16dev | los levanta `forge start` |
+| *(ninguno)* | apachedev, php83dev, php84dev, php85dev, dnsmasq | los levanta `forge start` |
+| `pg16` `pg17` `pg18` | postgres | ver la sección Bases de datos y correo |
+| `mariadb11` `mariadb12` | mariadb | igual |
+| `mail` | mailpit | interfaz en `https://mail.<dominio>` |
 | `search` | es8143dev, kibana | Kibana en `127.0.0.1:5601` |
 | `tools` | mkcert | lo usa `install_cert.sh`; no es un servicio permanente |
 | `nginx` | nginxdev | **sustituye** a apachedev; ver abajo |
+
+Cuáles arrancan lo decide `COMPOSE_PROFILES` en `.env`, una lista separada por comas.
+El instalador la escribe, `forge db` y `forge mail` la editan, y también puedes tocarla
+a mano:
+
+```bash
+COMPOSE_PROFILES=pg18,mariadb12,mail
+```
+
+Lo que no esté ahí queda definido pero nunca se levanta.
 
 ### nginx en vez de Apache
 

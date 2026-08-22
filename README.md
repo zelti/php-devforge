@@ -110,7 +110,8 @@ Then open **https://welcome--sites.phpforge.dev**.
    Safe to re-run: your current `.env` supplies the defaults. For unattended use:
    ```bash
    ./install.sh --yes --domain=mydomain.dev --projects-dir=~/code
-   ./install.sh --help        # every option
+   ./install.sh --yes --profiles=pg18,mail    # databases and mail, unattended
+   ./install.sh --help                        # every option
    ```
 
    Nothing needs `sudo` except the DNS step, and only if you accept it.
@@ -341,10 +342,23 @@ Profiles are a compose feature, so this one stays a `docker compose` command;
 
 | Profile | Services | Notes |
 |---|---|---|
-| *(none)* | apachedev, php83dev, php84dev, php85dev, dnsmasq, postgres16dev | started by `forge start` |
+| *(none)* | apachedev, php83dev, php84dev, php85dev, dnsmasq | started by `forge start` |
+| `pg16` `pg17` `pg18` | postgres | see the Databases and Mail section |
+| `mariadb11` `mariadb12` | mariadb | same |
+| `mail` | mailpit | UI at `https://mail.<domain>` |
 | `search` | es8143dev, kibana | Kibana on `127.0.0.1:5601` |
 | `tools` | mkcert | used by `install_cert.sh`; not a long-running service |
 | `nginx` | nginxdev | **replaces** apachedev; see below |
+
+Which of these start is `COMPOSE_PROFILES` in `.env`, a comma-separated list. The
+installer sets it, `forge db` and `forge mail` edit it, and you can also edit it by
+hand:
+
+```bash
+COMPOSE_PROFILES=pg18,mariadb12,mail
+```
+
+Anything not listed there is defined but never started.
 
 ### nginx instead of Apache
 

@@ -3,3 +3,5 @@
 /certificates/*
 !/certificates/.gitkeep
 /.caroot
+
+/.env

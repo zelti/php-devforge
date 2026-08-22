@@ -302,9 +302,12 @@ ask for them when you want them:
 docker compose --profile search up -d      # Elasticsearch + Kibana
 ```
 
+Profiles are a compose feature, so this one stays a `docker compose` command;
+`forge start` covers the default set.
+
 | Profile | Services | Notes |
 |---|---|---|
-| *(none)* | apachedev, php83dev, php84dev, dnsmasq, postgres16dev | started by `docker compose up -d` |
+| *(none)* | apachedev, php83dev, php84dev, php85dev, dnsmasq, postgres16dev | started by `forge start` |
 | `search` | es8143dev, kibana | Kibana on `127.0.0.1:5601` |
 | `tools` | mkcert | used by `install_cert.sh`; not a long-running service |
 

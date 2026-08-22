@@ -298,9 +298,12 @@ cuando los quieras:
 docker compose --profile search up -d      # Elasticsearch + Kibana
 ```
 
+Los perfiles son cosa de compose, así que este sigue siendo un comando de
+`docker compose`; `forge start` cubre el conjunto por defecto.
+
 | Perfil | Servicios | Notas |
 |---|---|---|
-| *(ninguno)* | apachedev, php83dev, php84dev, php85dev, dnsmasq, postgres16dev | los levanta `docker compose up -d` |
+| *(ninguno)* | apachedev, php83dev, php84dev, php85dev, dnsmasq, postgres16dev | los levanta `forge start` |
 | `search` | es8143dev, kibana | Kibana en `127.0.0.1:5601` |
 | `tools` | mkcert | lo usa `install_cert.sh`; no es un servicio permanente |
 

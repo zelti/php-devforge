@@ -257,21 +257,23 @@ else
 fi
 
 title "Done"
+# Shorten $HOME back to ~ so a long path does not bury the instructions.
+SHORT_PROJ="${PROJ/#$HOME/\~}"
 cat <<EOF
-  Images:        ${IMAGES} (change IMAGE_MODE in .env at any time)
-
-  Customise without ever editing docker-library/, so upgrades never conflict:
-    custom/php.d/*.ini          PHP settings, no rebuild
-    docker-compose.local.yml    your own services and overrides
-
   Start it:      forge start
-  What is up:    forge status
-  Everything:    forge help
   Test page:     https://welcome--sites.${DOMAIN}
+  Everything:    forge help
 
-  Put your code in $PROJ/projects and link it from $PROJ/sites:
-      ln -s ../projects/my-app/public $PROJ/sites/my-app
+  Your projects live in ${SHORT_PROJ}
+
+      cd ${SHORT_PROJ}
+      ln -s ../projects/my-app/public sites/my-app
       -> https://my-app--sites.${DOMAIN}
 
-  Symlinks must point inside $PROJ, or the containers cannot follow them.
+  Symlinks must point inside that folder: the containers see nothing else.
+
+  Images are set to '${IMAGES}'. Customise without touching docker-library/,
+  so upgrades never conflict:
+      custom/php.d/*.ini          PHP settings, no rebuild
+      docker-compose.local.yml    your own services and overrides
 EOF

@@ -42,8 +42,18 @@ jobs:
             context: ./docker-library/mkcert
             args: ""
             tag: mkcert:dev
+          - name: nginx
+            context: ./docker-library/nginx
+            args: ""
+            tag: nginx:dev
     steps:
       - uses: actions/checkout@v5
+
+      # .env.example is the single source of truth for the default Node version,
+      # so a published image cannot drift from what the file documents.
+      - name: read defaults
+        id: defaults
+        run: echo "node=$(grep '^NODE_VERSION=' .env.example | cut -d= -f2)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -63,6 +73,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.tag }}
-          build-args: ${{ matrix.args }}
+          # Only the PHP images use it; passing it elsewhere would warn about an
+          # unconsumed build arg.
+          build-args: |
+            ${{ matrix.args }}
+            ${{ matrix.name == 'php' && format('NODE_VERSION={0}', steps.defaults.outputs.node) || '' }}
           cache-from: type=gha,scope=${{ matrix.tag }}
           cache-to: type=gha,mode=max,scope=${{ matrix.tag }}

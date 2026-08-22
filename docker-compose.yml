@@ -11,18 +11,26 @@ x-phpconfig_default: &phpconfig_default
     - dataphp-devforge:/home/php-devforge
     - ${PROJECTS_DIR:-/home/php-devforge/public_html}:/home/php-devforge/public_html
     - ./.caroot:/caroot:ro
+    # Drop .ini files in here to change PHP settings. No rebuild needed, and it
+    # does not shadow the image's own conf.d, where the Xdebug toggle lives.
+    - ./custom/php.d:/usr/local/etc/php/custom.d:ro
   environment:
     - PHP_XDEBUG=${XDEBUG_ENABLE}
     - XDEBUG_IDKEY=${XDEBUG_IDKEY}
+    - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/usr/local/etc/php/custom.d
     # Files created in the container end up owned by this uid/gid on the host.
     - PUID=${PUID:-1000}
     - PGID=${PGID:-1000}
   logging: *json-logging
 
 # Images are published to ghcr.io. `docker compose up -d` pulls them, which turns
-# a ~15 minute first run into about one. Every service keeps its `build:` section:
-# compose falls back to building when a pull is not possible, and
-# `docker compose build` still rebuilds locally after editing a Dockerfile.
+# a ~15 minute first run into about one.
+#
+# IMAGE_MODE in .env decides:
+#   missing  pull the published image, build only if the pull fails  (default)
+#   build    always build locally; the layer cache makes that cheap when nothing
+#            changed, and it picks up your Dockerfile edits automatically
+#   always   re-pull every time, to force the newest published image
 
 services:
   # Generates the certificates. Not started by `up -d`; run it with:
@@ -31,6 +39,7 @@ services:
   mkcert:
     build: ./docker-library/mkcert
     image: ghcr.io/zelti/php-devforge/mkcert:dev
+    pull_policy: ${IMAGE_MODE:-missing}
     profiles: ["tools"]
     volumes:
       - ./certificates:/certs
@@ -55,6 +64,7 @@ services:
   apachedev:
     build: ./docker-library/httpd
     image: ghcr.io/zelti/php-devforge/apache:dev
+    pull_policy: ${IMAGE_MODE:-missing}
     ports:
       - 80:80
       - 443:443
@@ -78,32 +88,47 @@ services:
       start_period: 10s
       timeout: 10s
 
-  # nginxdev:
-  #   build: ./docker-library/nginx
-  #   image: local/nginx:dev
-  #   container_name: nginx-dev
-  #   hostname: ${USERNAME}-nginx
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./certificates:/etc/nginx/ssl/:ro
-  #     - dataphp-devforge:/home/php-devforge:ro
-  #   environment:
-  #     - DEV_DOMAIN=${DEV_DOMAIN}
-  #     - PHP_VERSION=${PHP_VERSION}
-  #   depends_on:
-  #     - php${PHP_VERSION}dev
-  #   logging: *json-logging
-  #   healthcheck:
-  #     test: curl --fail http://localhost || exit 1
-  #     interval: 30s
-  #     retries: 5
-  #     start_period: 10s
-  #     timeout: 10s
+  # nginx, via OpenResty. Apache is the default; this is an alternative, not an
+  # addition -- both want ports 80 and 443, so stop one before starting the other:
+  #
+  #   docker compose stop apachedev
+  #   docker compose --profile nginx up -d nginxdev
+  #
+  # OpenResty rather than plain nginx: the document root and the PHP backend come
+  # from the host name in Lua, which stock nginx cannot do.
+  #
+  # No .htaccess here. That is the reason Apache is the default.
+  nginxdev:
+    profiles: ["nginx"]
+    build: ./docker-library/nginx
+    image: ghcr.io/zelti/php-devforge/nginx:dev
+    pull_policy: ${IMAGE_MODE:-missing}
+    container_name: nginxdev
+    hostname: ${USERNAME}-nginxdev
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - dataphp-devforge:/home/php-devforge:ro
+      - ./certificates:/etc/nginx/ssl/:ro
+      - ${PROJECTS_DIR:-/home/php-devforge/public_html}:/home/php-devforge/public_html
+    environment:
+      - DEV_DOMAIN=${DEV_DOMAIN}
+      - PHP_VERSION=${PHP_VERSION}
+    depends_on:
+      - php${PHP_VERSION}dev
+      - dnsmasq
+    logging: *json-logging
+    healthcheck:
+      test: curl --fail http://localhost || exit 1
+      interval: 30s
+      retries: 5
+      start_period: 10s
+      timeout: 10s
 
   php83dev:
     image: ghcr.io/zelti/php-devforge/php:8.3-dev
+    pull_policy: ${IMAGE_MODE:-missing}
     container_name: php83dev
     hostname: ${USERNAME}-php83dev
     build:
@@ -115,6 +140,7 @@ services:
 
   php84dev:
     image: ghcr.io/zelti/php-devforge/php:8.4-dev
+    pull_policy: ${IMAGE_MODE:-missing}
     container_name: php84dev
     hostname: ${USERNAME}-php84dev
     build:
@@ -128,6 +154,7 @@ services:
   # all, and the vhosts pick the backend from the host name.
   php85dev:
     image: ghcr.io/zelti/php-devforge/php:8.5-dev
+    pull_policy: ${IMAGE_MODE:-missing}
     container_name: php85dev
     hostname: ${USERNAME}-php85dev
     build:

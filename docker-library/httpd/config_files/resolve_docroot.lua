@@ -3,6 +3,17 @@
 
 require "apache2"
 
+-- True for a directory or a symlink to one. Opening a directory succeeds but
+-- reading it does not, which is enough to tell them apart without extra libraries.
+local function is_dir(path)
+    local f = io.open(path, "r")
+    if not f then return false end
+    local ok = f:read(1)
+    f:close()
+    return ok == nil
+end
+
+
 function silly_mapper(r)
     local dev_domain = os.getenv("DEV_DOMAIN") 
     local host = r.hostname
@@ -56,13 +67,16 @@ function silly_mapper(r)
         -- Construir el path final invertido
         final_path = table.concat(reversed_parts, "/")
                 
-        -- Construir la ruta final
-        docroot = docroot .. "/" .. final_path
-        
-        -- Opcional: Verificar si el directorio existe
-        local file = io.open(docroot, "r")
-        if file then
-            file:close()
+        -- sites/ is a shortcut: anything linked in there gets a short host name.
+        -- Tried first, with the full path from the root as the fallback, so both
+        --   mi-app.dominio                  -> sites/mi-app
+        --   public--mi-app--projects.dominio -> projects/mi-app/public
+        -- keep working.
+        local shortcut = docroot .. "/sites/" .. final_path
+        if is_dir(shortcut) then
+            docroot = shortcut
+        else
+            docroot = docroot .. "/" .. final_path
         end
     end
     

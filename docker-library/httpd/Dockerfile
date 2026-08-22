@@ -30,13 +30,15 @@ COPY config_files/devlocal-common.conf /etc/apache2/snippets/devlocal-common.con
 #Sites
 COPY config_files/devlocal.conf /etc/apache2/sites-available/devlocal.conf
 COPY config_files/devlocal_https.conf /etc/apache2/sites-available/devlocal_https.conf
+COPY config_files/010-mail.conf /etc/apache2/sites-available/010-mail.conf
 #config
 COPY config_files/php-fpm.conf /etc/apache2/conf-available/php-fpm.conf
 
 RUN a2enmod http2 rewrite headers ssl actions proxy_fcgi alias proxy_http proxy_wstunnel lua \
     && a2enconf php-fpm \
     && a2ensite devlocal \
-    && a2ensite devlocal_https 
+    && a2ensite devlocal_https \
+    && a2ensite 010-mail 
 
 
 # Crear usuario de desarrollo php-devforge

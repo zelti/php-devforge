@@ -15,8 +15,8 @@ warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 title() { echo -e "\n${BLUE}$1${NC}"; }
 
-ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0
-OPT_DOMAIN=""; OPT_DIR=""; OPT_PHP=""; OPT_DNS_PORT=""
+ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0; SKIP_LINK=0
+OPT_DOMAIN=""; OPT_DIR=""; OPT_PHP=""; OPT_DNS_PORT=""; OPT_IMAGES=""; OPT_PROFILES=""
 
 usage() {
     cat <<EOF
@@ -28,6 +28,9 @@ Usage: $0 [OPTIONS]
   --projects-dir=PATH   where your projects live (default: ~/php-devforge)
   --php=83|84           default PHP version (default: 84)
   --dns-port=N          port for the local DNS (default: first free one)
+  --images=pull|build   use the published images, or build your own (default: pull)
+  --profiles=a,b        databases and extras to enable, e.g. pg18,mariadb12,mail
+  --skip-link           do not put `forge` on your PATH
   --skip-cert           do not generate certificates
   --skip-dns            do not touch the system DNS
   -y, --yes             accept every default, ask nothing
@@ -43,6 +46,9 @@ for arg in "$@"; do
         --projects-dir=*) OPT_DIR="${arg#*=}" ;;
         --php=*)          OPT_PHP="${arg#*=}" ;;
         --dns-port=*)     OPT_DNS_PORT="${arg#*=}" ;;
+        --images=*)       OPT_IMAGES="${arg#*=}" ;;
+        --profiles=*)     OPT_PROFILES="${arg#*=}" ;;
+        --skip-link)      SKIP_LINK=1 ;;
         --skip-cert)      SKIP_CERT=1 ;;
         --skip-dns)       SKIP_DNS=1 ;;
         -y|--yes)         ASSUME_YES=1 ;;
@@ -90,6 +96,7 @@ DEF_DOMAIN="${DEV_DOMAIN:-phpforge.dev}"
 DEF_DIR="${PROJECTS_DIR:-$HOME/php-devforge}"
 DEF_PHP="${PHP_VERSION:-84}"
 DEF_DNS_PORT="${DNS_PORT:-}"
+case "${IMAGE_MODE:-missing}" in build) DEF_IMAGES="build" ;; *) DEF_IMAGES="pull" ;; esac
 
 ask() { # prompt, default -> answer on stdout
     local prompt="$1" default="$2" answer
@@ -108,13 +115,22 @@ confirm() { # prompt -> 0 yes / 1 no
 title "Settings"
 DOMAIN="${OPT_DOMAIN:-$(ask "Development domain?" "$DEF_DOMAIN")}"
 PROJ="${OPT_DIR:-$(ask "Where will your projects live?" "$DEF_DIR")}"
-PHPV="${OPT_PHP:-$(ask "Default PHP version (83 or 84)?" "$DEF_PHP")}"
+PHPV="${OPT_PHP:-$(ask "Default PHP version (83, 84 or 85)?" "$DEF_PHP")}"
+echo "  Images: 'pull' downloads prebuilt ones (about a minute)."
+echo "          'build' compiles them here (about 15 minutes the first time),"
+echo "          which is what you want if you plan to edit docker-library/."
+IMAGES="${OPT_IMAGES:-$(ask "Pull the images or build them?" "$DEF_IMAGES")}"
 
 # compose does not understand ~, so store an absolute path
 PROJ="${PROJ/#\~/$HOME}"
 case "$PROJ" in /*) ;; *) PROJ="$PWD/$PROJ" ;; esac
 
-case "$PHPV" in 83|84) ;; *) err "PHP version must be 83 or 84 (got: $PHPV)"; exit 1 ;; esac
+case "$PHPV" in 83|84|85) ;; *) err "PHP version must be 83, 84 or 85 (got: $PHPV)"; exit 1 ;; esac
+case "$IMAGES" in
+    pull)  IMAGE_MODE_V="missing" ;;
+    build) IMAGE_MODE_V="build" ;;
+    *) err "Images must be 'pull' or 'build' (got: $IMAGES)"; exit 1 ;;
+esac
 
 # ---------- free DNS port ----------
 if [ -n "$OPT_DNS_PORT" ]; then
@@ -139,6 +155,34 @@ info "DNS port: $DNSP"
 PUID_V="$(id -u)"; PGID_V="$(id -g)"
 info "Your user: uid $PUID_V, gid $PGID_V"
 
+# ---------- databases and mail ----------
+# Both are compose profiles, so this just builds COMPOSE_PROFILES.
+title "Databases and mail"
+echo "  Nothing is started unless you pick it. You can change this later with"
+echo "  'forge db on|off <name>' and 'forge mail on|off'."
+echo ""
+echo "  Databases available: $(docker compose config --profiles 2>/dev/null | grep -E '^(pg|mariadb)' | tr '\n' ' ')"
+
+PROFILES=""
+if [ -n "$OPT_PROFILES" ]; then
+    PROFILES="$OPT_PROFILES"
+else
+    DBS="$(ask "Which databases? (space separated, or none)" "${COMPOSE_PROFILES:-none}")"
+    case "$DBS" in none|"") DBS="" ;; esac
+    for d in $DBS; do
+        d="${d//,/}"
+        [ -z "$d" ] && continue
+        if docker compose config --profiles 2>/dev/null | grep -qx "$d"; then
+            PROFILES="${PROFILES:+$PROFILES,}$d"
+        else
+            warn "Unknown database '$d', skipped"
+        fi
+    done
+    if confirm "Catch outgoing mail at mail.${DOMAIN}?"; then
+        PROFILES="${PROFILES:+$PROFILES,}mail"
+    fi
+fi
+
 # ---------- write .env ----------
 title "Writing configuration"
 [ -f .env ] && cp .env ".env.backup" && warn "Previous .env saved as .env.backup"
@@ -149,8 +193,48 @@ sed -e "s|^DEV_DOMAIN=.*|DEV_DOMAIN=${DOMAIN}|" \
     -e "s|^DNS_PORT=.*|DNS_PORT=${DNSP}|" \
     -e "s|^PUID=.*|PUID=${PUID_V}|" \
     -e "s|^PGID=.*|PGID=${PGID_V}|" \
+    -e "s|^IMAGE_MODE=.*|IMAGE_MODE=${IMAGE_MODE_V}|" \
+    -e "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${PROFILES}|" \
     .env.example > .env
 info ".env written"
+
+# ---------- customisation points ----------
+# COMPOSE_FILE lists docker-compose.local.yml, and compose errors on a file that
+# is not there, so it has to exist even when empty.
+if [ ! -f docker-compose.local.yml ]; then
+    cat > docker-compose.local.yml <<'LOCALEOF'
+# Your own services and overrides. Ignored by git, so `git pull` never conflicts
+# with what you put here.
+#
+# services:
+#   redis:
+#     image: redis:7-alpine
+#     ports:
+#       - 127.0.0.1:6379:6379
+LOCALEOF
+    info "docker-compose.local.yml created (yours, ignored by git)"
+fi
+
+# Listed only once the file exists, since compose errors on a missing one.
+# Anchored to the setting: the comment above it in .env.example mentions the file too.
+if ! grep -q '^COMPOSE_FILE=.*docker-compose\.local\.yml' .env 2>/dev/null; then
+    sed -i 's|^COMPOSE_FILE=\(.*\)$|COMPOSE_FILE=\1:docker-compose.local.yml|' .env
+fi
+
+mkdir -p custom/php.d
+if [ ! -f custom/php.d/README.md ]; then
+    cat > custom/php.d/README.md <<'INIEOF'
+Any `.ini` file here is loaded by every PHP container. No rebuild needed: edit,
+then `docker compose up -d --force-recreate php84dev`.
+
+    ; custom/php.d/99-mine.ini
+    memory_limit = 512M
+    upload_max_filesize = 100M
+
+This is scanned in addition to the image's own conf.d, so it does not shadow
+anything -- the Xdebug toggle keeps working.
+INIEOF
+fi
 
 # ---------- projects folder ----------
 mkdir -p "$PROJ/projects" "$PROJ/sites"
@@ -168,6 +252,29 @@ echo "      sites/     symlinks to each project's public folder"
 echo "      sites/welcome  a test page"
 
 # ---------- optional steps ----------
+# ---------- forge on PATH ----------
+# A symlink, not a copy, so `git pull` updates the command too.
+title "The forge command"
+if [ "$SKIP_LINK" -eq 1 ]; then
+    warn "Skipped (--skip-link). Run it as $(pwd)/bin/forge"
+else
+    BIN_DIR="$HOME/.local/bin"
+    LINK="$BIN_DIR/forge"
+    if [ -e "$LINK" ] && [ "$(readlink -f "$LINK")" != "$(readlink -f bin/forge)" ]; then
+        warn "$LINK exists and points somewhere else. Left alone."
+        warn "Run this project's copy as $(pwd)/bin/forge"
+    else
+        mkdir -p "$BIN_DIR"
+        ln -sfn "$(pwd)/bin/forge" "$LINK"
+        info "forge linked into $BIN_DIR"
+        case ":$PATH:" in
+            *":$BIN_DIR:"*) info "$BIN_DIR is on your PATH: just type 'forge'" ;;
+            *) warn "$BIN_DIR is not on your PATH yet. Add this to your shell profile:"
+               echo "      export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+        esac
+    fi
+fi
+
 title "Certificates"
 if [ "$SKIP_CERT" -eq 1 ]; then
     warn "Skipped (--skip-cert). Run ./install_cert.sh when you want HTTPS."
@@ -187,14 +294,23 @@ else
 fi
 
 title "Done"
+# Shorten $HOME back to ~ so a long path does not bury the instructions.
+SHORT_PROJ="${PROJ/#$HOME/\~}"
 cat <<EOF
-  Start it:      docker compose up -d
-  Shortcuts:     source $(pwd)/aliases.bash
+  Start it:      forge start
   Test page:     https://welcome--sites.${DOMAIN}
+  Everything:    forge help
 
-  Put your code in $PROJ/projects and link it from $PROJ/sites:
-      ln -s ../projects/my-app/public $PROJ/sites/my-app
+  Your projects live in ${SHORT_PROJ}
+
+      cd ${SHORT_PROJ}
+      ln -s ../projects/my-app/public sites/my-app
       -> https://my-app--sites.${DOMAIN}
 
-  Symlinks must point inside $PROJ, or the containers cannot follow them.
+  Symlinks must point inside that folder: the containers see nothing else.
+
+  Images are set to '${IMAGES}'. Customise without touching docker-library/,
+  so upgrades never conflict:
+      custom/php.d/*.ini          PHP settings, no rebuild
+      docker-compose.local.yml    your own services and overrides
 EOF

@@ -70,6 +70,19 @@ jobs:
           grep -q "^PUID=$(id -u)$" .env
           grep -q "^PGID=$(id -g)$" .env
 
+      # forge is the documented entry point now, so it gets exercised rather than
+      # only its README examples.
+      - name: the forge command works
+        run: |
+          test -L "$HOME/.local/bin/forge" || { echo "installer did not link forge"; exit 1; }
+          export PATH="$HOME/.local/bin:$PATH"
+          cd /tmp    # it must work from anywhere, not just the checkout
+          forge help | grep -q "8.3 8.4 8.5" || { echo "versions not discovered"; exit 1; }
+          forge status | grep -q "PHP DevForge"
+          forge images status
+          # unknown versions must be refused, not passed to docker
+          if forge use 9.9 2>/dev/null; then echo "9.9 should have been rejected"; exit 1; fi
+
       - name: build images
         # Every PHP version is built. 8.5 broke silently once: opcache became
         # built-in and docker-php-ext-install started failing on it.
@@ -143,11 +156,15 @@ jobs:
               || { echo "expected PHP ${v:0:1}.${v:1:1}"; exit 1; }
           done
 
-      - name: opcache is present in every version
+      # Neither is installed by us any more: the base images already provide them.
+      # If that ever stops being true, this catches it instead of a user finding out.
+      - name: opcache and mbstring are present in every version
         run: |
           for s in php83dev php84dev php85dev; do
-            got="$(docker compose exec -T "$s" php -r 'echo extension_loaded("Zend OPcache")?"yes":"no";')"
-            test "$got" = "yes" || { echo "$s: opcache missing"; exit 1; }
+            got="$(docker compose exec -T "$s" php -r 'echo extension_loaded("Zend OPcache") && extension_loaded("mbstring") ? "yes" : "no";')"
+            test "$got" = "yes" || { echo "$s: opcache or mbstring missing"; exit 1; }
+            len="$(docker compose exec -T "$s" php -r 'echo mb_strlen("ñandú");')"
+            test "$len" = "5" || { echo "$s: mbstring not working (got $len)"; exit 1; }
             echo "$s ok"
           done
 
@@ -178,6 +195,27 @@ jobs:
           owner="$(stat -c %u "$DIR/projects/my-app/public/written.txt")"
           test "$owner" = "$(id -u)" || { echo "owned by $owner, expected $(id -u)"; exit 1; }
           rm -f "$DIR/projects/my-app/public/written.txt"
+
+      # sites/ is a shortcut tried before the full path, and both must keep working.
+      - name: short and full paths both resolve
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+          forge link "$DIR/projects/my-app/public"
+          mkdir -p "$DIR/sites/api/v2"
+          printf '<?php echo "nested ok";' > "$DIR/sites/api/v2/index.php"
+          get() { curl -fsS -k --resolve "$1.phpforge.dev:443:127.0.0.1" "https://$1.phpforge.dev/"; }
+          get my-app                   | grep -q "my-app on PHP"   # sites/ shortcut
+          get v2--api                  | grep -q "nested ok"       # nested under sites/
+          get public--my-app--projects | grep -q "my-app on PHP"   # full path still works
+          get my-app--sites            | grep -q "my-app on PHP"   # long form still works
+          # forge link must produce a relative link: an absolute one resolves on the
+          # runner but points at nothing inside the containers.
+          case "$(readlink "$DIR/sites/my-app")" in
+            /*) echo "link is absolute; it will 404 inside the containers"; exit 1 ;;
+          esac
+          # and it must refuse a folder the containers cannot see
+          if forge link /tmp 2>/dev/null; then echo "should have refused /tmp"; exit 1; fi
 
       # Apache does not forward the Authorization header to FastCGI by itself;
       # php-fpm.conf adds it back. Removing that line breaks every Bearer token
@@ -257,6 +295,66 @@ jobs:
           test ! -f /etc/systemd/resolved.conf.d/50-php-devforge.conf
           getent hosts github.com >/dev/null || { echo "DNS broken after removal"; exit 1; }
           echo "clean"
+
+      # Databases and mail are only useful if PHP can actually reach them, which is
+      # a shared-network question rather than a compose-syntax one.
+      - name: databases and mail are reachable from PHP
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          forge db on pg18
+          forge db on mariadb12
+          forge mail on
+          for i in $(seq 1 40); do
+            docker compose exec -T postgres18dev pg_isready -q 2>/dev/null \
+              && docker compose exec -T mariadb12dev mariadb-admin ping --silent 2>/dev/null \
+              && break
+            sleep 3
+          done
+          docker compose exec -T php84dev php -r '
+            $u = getenv("USER_DEV") ?: "php-devforge"; $p = "php-devforge01";
+            new PDO("pgsql:host=postgres18dev;port=5432;dbname=$u", $u, $p);
+            new PDO("mysql:host=mariadb12dev;port=3306;dbname=$u", $u, $p);
+            echo "both databases reachable\n";'
+          # Mail: sent over SMTP from PHP, read back through the web UI.
+          docker compose exec -T php84dev php -r '
+            $s = fsockopen("mailpit", 1025, $e, $es, 5) or exit(1);
+            fgets($s);
+            foreach (["EHLO ci","MAIL FROM:<a@ci.test>","RCPT TO:<b@ci.test>","DATA"] as $c) {
+                fwrite($s, "$c\r\n"); fgets($s);
+            }
+            fwrite($s, "Subject: ci-probe\r\n\r\nbody\r\n.\r\n"); fgets($s);
+            fwrite($s, "QUIT\r\n");'
+          sleep 3
+          curl -fsS -k --resolve mail.phpforge.dev:443:127.0.0.1 \
+            "https://mail.phpforge.dev/api/v1/messages?limit=5" | grep -q ci-probe
+          echo "mail captured and served at mail.<domain>"
+
+      # nginx sat commented out and broken since the first commit precisely because
+      # nothing exercised it. It is an alternative to Apache, not an addition: both
+      # want ports 80 and 443.
+      - name: the nginx variant serves the same sites
+        run: |
+          docker compose build nginxdev
+          docker compose stop apachedev
+          docker compose --profile nginx up -d nginxdev
+          for i in $(seq 1 30); do
+            curl -fsS --max-time 5 -k --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
+              https://welcome--sites.phpforge.dev/ >/dev/null 2>&1 && break
+            sleep 1
+          done
+          get() { curl -fsS -k --resolve "$1.phpforge.dev:443:127.0.0.1" "https://$1.phpforge.dev/"; }
+          get my-app--sites          | grep -q "PHP 8.4"
+          get my-app--sites--p83     | grep -q "PHP 8.3"
+          get my-app--sites--p85     | grep -q "PHP 8.5"
+          # The Lua sets an unroutable backend when it cannot work out a version, so a
+          # .php fails closed instead of being served as a static file.
+          for h in my-app--sites my-app--sites--p99; do
+            body="$(curl -sk --resolve "$h.phpforge.dev:443:127.0.0.1" "https://$h.phpforge.dev/index.php" || true)"
+            printf '%s' "$body" | grep -q '<?php' && { echo "SOURCE LEAK on $h"; exit 1; }
+          done
+          echo "nginx ok"
+          docker compose stop nginxdev
+          docker compose up -d apachedev
 
       - name: container logs on failure
         if: failure()

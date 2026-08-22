@@ -475,11 +475,57 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       `ServerName` from the include, and HTTPS **and** plain HTTP serve the welcome page,
       a hyphenated project, `--p83` version selection, and no source leak.
 
-- [ ] **12. The nginx variant is broken and unmaintained** — its Lua uses `[0-9]{2}`
-      and `\\.`, which are not valid Lua patterns, and its `gsub("--", "/")` does not
-      reverse the path segments the way the Apache version does. It is commented out
-      in compose, so nobody notices.
-      → Either fix it to match Apache's behaviour, or delete it.
+- [x] **12. The nginx variant is broken and unmaintained** — FIXED
+      Decision: repair it. FrankenPHP stays a separate task.
+      It had **eight** defects, not one, and being commented out is exactly why none of
+      them surfaced:
+
+      | Where | Defect |
+      |---|---|
+      | Lua | `[0-9]{2}` — `{2}` is not a Lua quantifier |
+      | Lua | `\\.` — Lua escapes with `%.` |
+      | Lua | `%-p` matches one hyphen; the suffix is `--pNN` |
+      | Lua | the domain was unescaped, so `.` matched any character |
+      | Lua | `gsub("--", "/")` — `-` is a Lua quantifier; needs `%-%-` |
+      | Lua | **no reversal at all** — the core behaviour was missing |
+      | `site.conf.tpl` | `default "php${PHP_VERSION}"` lacked the `dev` suffix, pointing at a host that does not exist |
+      | `site.conf.tpl` | versions enumerated, so 8.5 was absent |
+
+      Rewritten to mirror the Apache resolver, which is tested. The backend is derived in
+      Lua too, so the enumerated `map` is gone and adding a version needs no change here.
+
+      **A phase-ordering bug appeared while testing**, worth remembering:
+      `set $backend "$php_backend:9000"` inside the location captured the placeholder,
+      because `set` runs in the rewrite phase *before* `rewrite_by_lua_file`. Using
+      `fastcgi_pass $php_backend:9000` directly defers it to the content phase.
+
+      Fails closed by design: the placeholder is an unroutable name, so if the Lua ever
+      fails to run a `.php` returns 502 instead of being served as a static file — the
+      way Apache once leaked source.
+
+      Now a real service behind `profiles: ["nginx"]`, **not commented out**, so
+      `docker compose config` and CI keep checking it. It replaces Apache rather than
+      joining it: both want ports 80 and 443.
+
+      Verified end to end: welcome page, nested paths (`v2--api--sites`), hyphenated
+      names (`laravel-app--sites`), `--p83`/`--p84`/`--p85`, no source leak including
+      `--p99`, hidden `.php` returns 403, and `Authorization` reaches PHP. CI builds it,
+      swaps Apache out, runs the same assertions, and swaps back.
+
+      **Naming:** called nginx, documented as OpenResty. It is a distribution of nginx so
+      the name is not wrong, and it is what people search for — but the docs say plainly
+      that stock nginx cannot do this, so nobody swaps the base image and wonders why it
+      breaks.
+
+- [ ] **28. FrankenPHP as an optional profile** — deferred, discussed
+      Considered while deciding what to do about nginx. It is not another web server but a
+      different execution model: PHP embedded in a Caddy-based server, with an optional
+      worker mode keeping the app in memory between requests.
+      **The catch is the one that made nginx get abandoned in the first place:** no
+      `.htaccess`. Caddy has no Lua either, so the host-to-path reversal would need regex
+      per depth.
+      Sensible as an opt-in `profiles: ["frankenphp"]` for worker-mode performance on
+      modern frameworks — never as the default.
 
 - [x] **13. Replace commented-out services with compose `profiles:`** — DONE
       Elasticsearch and Kibana were ~32 lines of commented YAML. Commented means invisible
@@ -598,6 +644,17 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       **Known wart:** the publish matrix lists each PHP version, so adding one means
       editing compose *and* that workflow. Worth generating from compose later.
 
+      **Caught after the fact:** publishing images quietly broke `NODE_VERSION` in `.env`.
+      It is a *build* arg, so a pulled image already has Node fixed and the setting does
+      nothing for anyone who does not build locally — it used to work only because
+      everybody built. The comment in `.env.example` now says so plainly, and the publish
+      workflow reads `NODE_VERSION` from `.env.example` so the published default cannot
+      drift from what the file documents.
+
+      The same applies to anything else baked at build time: it is configurable for people
+      who build, fixed for people who pull. Worth remembering before adding another
+      build arg to `.env`.
+
 - [x] **23. PHP 8.5 does not build** — FIXED
       Adding the service was exactly what the refactoring promised: 13 lines in
       `docker-compose.yml`, no new Dockerfile, no vhost change. The image itself fails.
@@ -641,7 +698,7 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       The last `docker-compose` mention in `README.md` is gone too, so the project is
       fully on v2.
 
-- [ ] **18. Replace the aliases with a real `forge` command** 💬 DISCUSS FIRST
+- [x] **18. Replace the aliases with a real `forge` command** — DONE
       Idea from the user: instead of shell aliases, ship a single executable so you can
       run `forge start`, `forge stop`, `forge use 8.3`, `forge logs 8.4`.
 
@@ -662,6 +719,10 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       - Should the PHP versions be discovered from `docker-library/php/*/` instead of
         being hardcoded, so a new version needs no code change?
       - Plain bash script, or something else? (bash keeps it dependency-free)
+      - **Agreed already:** it should expose the image mode, e.g. `forge images build`
+        / `forge images pull`, so switching does not mean editing `.env` by hand. The
+        setting exists (`IMAGE_MODE`, honoured by `pull_policy` on every buildable
+        service) and the installer asks for it; only the command is missing.
 
 - [x] **20. PHP backend selection is now dynamic** — DONE
       The vhosts enumerated every PHP version (`SetEnvIf` per version + an `<If>` per
@@ -710,3 +771,212 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       - Fallback: any missing string must fall back to English rather than print a
         variable name.
 
+- [x] **24. Customising without conflicting on upgrade** — DONE
+      Once people start editing `docker-library/` to add an extension or change a PHP
+      setting, `git pull` conflicts. The idea of copying the Dockerfiles to an
+      untracked directory was considered and rejected: it trades a loud problem for a
+      silent one. A copy made a month ago would still carry the source-code leak, the
+      volume permission race and the 8.5 opcache break, with nothing to signal it.
+
+      Three extension points instead, all gitignored, so `docker-library/` never needs
+      touching:
+      - `custom/php.d/*.ini` — mounted and added to `PHP_INI_SCAN_DIR` *alongside* the
+        image's own `conf.d`, not replacing it, so the Xdebug toggle keeps working.
+        **No rebuild.** Verified: `memory_limit` went 128M → 777M on a plain restart,
+        and `xdebug --force-activate` still loaded on port 9003 afterwards.
+      - `docker-compose.local.yml` — appended to `COMPOSE_FILE`, so it loads
+        automatically. Verified by adding a Redis service that answered `PONG`.
+        Compose **errors on a file listed but missing**, so the installer creates it.
+
+        **CI caught a bootstrap bug here**, and it would have hit real users: the file
+        was listed in `.env.example`, but it is gitignored, so a fresh checkout that
+        copied `.env.example` to `.env` could not run `docker compose config` at all.
+        Now `.env.example` omits it and the installer appends it right after creating
+        the file. The first attempt at that fix was itself wrong — the guard grepped for
+        the filename anywhere in `.env` and matched the explanatory comment, so the
+        append never ran. Anchored to `^COMPOSE_FILE=` instead.
+      - The `FROM ghcr.io/.../php:8.4-dev` pattern for extra extensions, documented in
+        the README: a few lines that keep inheriting upstream fixes.
+
+- [x] **25. Two extensions were being compiled for nothing** — DONE
+      Asked while reviewing customisation: which extensions does the base image already
+      ship? Checking turned up two we were recompiling on every build of every version:
+      - **`mbstring`** — built into the binary. `php -i` shows `'--enable-mbstring'` in
+        the configure command, and `ReflectionExtension` reports the extension version as
+        PHP's own, which only happens when it is compiled in.
+      - **`opcache`** — the base image already enables it: `docker-php-ext-opcache.ini`
+        sits in `conf.d` for 8.3 and 8.4, and 8.5 has it in the binary.
+
+      `docker-php-ext-enable` noticed both were already loaded, warned, and skipped
+      writing the ini — so the compile time and the leftover `.so` bought nothing. Three
+      versions, now also built for two architectures with arm64 under emulation.
+
+      **This replaces yesterday's fix rather than adding to it.** Task 23 dodged the 8.5
+      failure with a version conditional; the real cause was asking for an extension the
+      image already had. The conditional is gone:
+
+      ```dockerfile
+      && set -- gd intl zip pdo_mysql pdo_pgsql soap xsl bcmath exif pcntl
+      ```
+
+      Verified by building 8.5 from scratch: every extension still loaded, opcache
+      present, `mb_strlen("ñandú")` = 5. CI now asserts both across all three versions,
+      so if a future base image stops shipping them we find out instead of a user.
+
+- [x] **26. README did not match what the project does** — DONE
+      Asked directly: is the README up to date? It was not, and parts were **wrong**
+      rather than merely missing — worse, because a reader trusts them:
+      - "Node.js 19" — replaced yesterday by 24
+      - "83 for 8.3, 84 for 8.4" — 8.5 exists now
+      - version switching documented only `--p83` / `--p84`
+      Undocumented: pnpm, `DNS_PORT`, `setup-local-dns.sh --status/--remove`, and the
+      local DNS behaviour of touching only the dev domain.
+
+      Also a real gap in the code, not just the docs: **`aliases.bash` had no 8.5
+      shortcuts**. `forge:use:php85`, `forge:exec:php85` and `forge:logs:php85` added and
+      tested against a running container.
+
+      New README sections for local DNS and troubleshooting entries for the things that
+      look like bugs but are not: the pnpm nudge, and a `custom/php.d` ini needing
+      `--force-recreate` rather than a plain restart.
+
+- [x] **27. README redesign, and a Spanish one** — DONE
+      The README opened with a paragraph of description and buried the one thing that
+      makes the project different. It now leads with the folder-to-URL mapping, shown
+      rather than explained, then per-request PHP versions, then a comparison table.
+
+      **A claim was checked before publishing it.** The requested line — *"unlike tools
+      built around per-project configuration, PHP DevForge derives domains straight from
+      your folder structure"* — is accurate against DDEV, which needs `ddev config` in
+      every project. It is **not** accurate against Laravel Herd: its documentation says
+      *"You can access every site in a parked path via `<directory-name>.test`"*, so Herd
+      derives domains from folders too. Publishing it unqualified would have looked
+      uninformed to exactly the audience being addressed.
+
+      The line stayed, and the comparison table carries what is actually unique:
+      nested paths at any depth (`v2--api--sites`, where Herd does one level), the PHP
+      version chosen per request from the URL, and Linux support. The table also says
+      plainly what the others do better, which is more persuasive than pretending
+      otherwise.
+
+      `README.es.md` added, written as its own document rather than a literal
+      translation, with language switcher links in both. Verified: no broken internal
+      anchors, every external link resolves.
+
+      **Note for task 22 (i18n):** this is documentation only. The scripts still speak
+      English.
+
+**Task 18 — how it was resolved**
+
+`bin/forge`, with subcommands rather than the old `forge:use:php85` names. The
+aliases only worked in bash: zsh handled the colons awkwardly and fish not at all, so
+the project silently excluded those users while the README told everyone to use them.
+
+- **Versions are discovered, not listed.** `forge` reads the PHP services out of
+  `docker compose config`, so adding `php86dev` makes `forge use 8.6` work with no
+  change to the binary. `8.5` and `85` are both accepted; anything else is refused
+  with the available list, rather than passed through to docker.
+- **`forge install`** now fronts the installer, and `certs` and `dns` front their
+  scripts, so there is one entry point instead of five. `install.sh` stays at the repo
+  root because that is what a first-time reader looks for.
+- **The installer symlinks it into `~/.local/bin`** — a symlink, not a copy, so
+  `git pull` updates the command. It checks whether that directory is on `PATH` and
+  prints the line to add if not, and refuses to clobber an existing unrelated `forge`.
+- **`aliases.bash` became a PATH shim** and documents the old-to-new mapping, since
+  the subcommand-only option was chosen over keeping both.
+
+**On the language.** Rust was considered — the honest answer was no, for now. The
+command is a wrapper around `docker compose` and `sed` on `.env`; in Rust it would be
+`Command::new("docker")` throughout, so the type safety and performance barely apply,
+while distribution would mean four platform binaries and a release pipeline. This same
+session *removed* a Go toolchain from `install_cert.sh` for the same reason. Worth
+revisiting if `forge` ever grows real logic — parsing and validating config, holding
+state, a TUI — where `clap` would earn its keep.
+
+Verified from `/tmp`, outside the checkout: `forge use 8.5` changed `.env` **and the
+site served PHP 8.5.9**; `forge use 84` switched back. CI exercises the command
+directly rather than only its README examples.
+
+- [x] **29. Databases you choose, and a mail catcher** — DONE
+      PostgreSQL 16 was the only database, it always started, and it was two majors
+      behind. Meanwhile `pdo_mysql` was compiled into every PHP image with **no MySQL
+      service to talk to** — a bigger inconsistency than the always-on question.
+
+      Measured before deciding whether to make it optional: Postgres idles at **17 MB**,
+      not the 100+ assumed. That is too little to justify breaking startup for people who
+      rely on it — so the answer was not "hide it behind a profile" but "offer more, start
+      none".
+
+      Five databases now, each behind its own profile, **none running by default**:
+      postgres 16/17/18 on ports 5416/5417/5418, mariadb 11.8 LTS and 12 on 3311/3312.
+      Ports encode the version so several can run at once. Selected during install, or
+      with `forge db list|on|off`, which edits `COMPOSE_PROFILES` in `.env` — verified
+      that compose honours that variable from `.env`, including comma-separated values.
+
+      **Mail catcher** (Mailpit) behind the `mail` profile, served at `mail.<domain>`
+      so there is no port to remember. `forge mail on|off`.
+
+      Mailpit over MailDev on the numbers: **52 MB against 340 MB**, since MailDev
+      carries a Node runtime. Both are actively maintained — MailDev was updated two
+      days before this was written, so it is not a maintained-vs-abandoned choice.
+      MailHog, despite more stars, has not moved since February 2024. Mailpit's API is
+      also what CI uses to read the inbox back.
+
+      **The URL says `mail`, not the tool's name.** The service was first called
+      `maildev` while running Mailpit, which would have sent anyone reading `docker ps`
+      to the wrong documentation. Now the container is `mailpit` and the URL is neutral,
+      so swapping the tool later does not invalidate a bookmarked address.
+
+      Three things that only surfaced by running it:
+      - **PostgreSQL 18 changed its mount point.** 16 and 17 take
+        `/var/lib/postgresql/data`; 18 wants `/var/lib/postgresql` and refuses to start
+        otherwise. It would have shipped broken.
+      - **Apache picks the first vhost that matches, in load order — not the most
+        specific.** `maildev.conf` lost to `devlocal_https.conf`'s
+        `ServerAlias *.${DEV_DOMAIN}`, so the Lua looked for a folder called `maildev`
+        and returned 404. Renamed to `010-maildev.conf` to load first. nginx does not
+        have this problem: it prefers an exact `server_name` over a regex regardless of
+        order.
+      - **`set -e` plus `grep` bit again** in `forge db list`: with no
+        `COMPOSE_PROFILES` line yet, the grep found nothing, exited 1, and killed the
+        command silently. Same trap as the installer's `.env` guard.
+
+      Verified: PHP connects to both databases **by container name over the shared
+      network**, mail sent from PHP over SMTP appears in the inbox, and the UI answers at
+      `https://maildev.phpforge.dev`. CI covers all of it.
+
+- [x] **30. Short URLs via a sites/ shortcut** — DONE
+      Asked whether a single hyphen would make URLs prettier than `--`. It would, and it
+      would also make them ambiguous: `my-app-sites` has **three** readings
+      (`sites/my-app`, `app-sites/my`, `sites/app/my`) with no way to choose. That is
+      the bug fixed in task 7, reintroduced by design. Dots read best but break the
+      wildcard certificate — mkcert says so itself: *"X.509 wildcards only go one level
+      deep"*. So `--` is not an aesthetic choice; it is what keeps every site on one DNS
+      label so a single certificate covers them all.
+
+      The length came from the path, not the separator: `sites/` appeared in every URL.
+      Now `sites/` is a **shortcut tried first**, with the full path as the fallback, so
+      both work:
+
+      | URL | Serves |
+      |---|---|
+      | `my-app.<domain>` | `sites/my-app` |
+      | `v2--api.<domain>` | `sites/api/v2` |
+      | `public--my-app--projects.<domain>` | `projects/my-app/public` |
+
+      Implemented in both resolvers with an `is_dir` helper — opening a directory
+      succeeds but reading it fails, which distinguishes them without extra libraries and
+      works through symlinks.
+
+      **`forge link <folder> [name]`** publishes a project. Three things it gets right
+      that are easy to botch by hand:
+      - **Relative links.** The first version made them absolute: correct on the host,
+        pointing at nothing inside the containers, which mount the tree elsewhere.
+      - **The name.** `basename` gives `public` for every framework, so it falls back to
+        the project directory above it.
+      - **Refuses folders outside `PROJECTS_DIR`**, which the containers cannot see.
+
+      Considered and rejected: putting `sites/` inside the container's volume to keep the
+      host folder tidy. It lives at a root-only path, so `ls` and `rm` would stop working,
+      and `docker compose down -v` — a routine command — would silently delete every
+      published link while leaving the projects behind.

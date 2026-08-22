@@ -980,3 +980,27 @@ directly rather than only its README examples.
       host folder tidy. It lives at a root-only path, so `ls` and `rm` would stop working,
       and `docker compose down -v` — a routine command — would silently delete every
       published link while leaving the projects behind.
+
+- [x] **31. CI passed on the branch and failed on main** — FIXED
+      Merging turned the same commits red. The step was "databases and mail are
+      reachable from PHP", failing with `SQLSTATE[HY000] [2002] Connection refused`.
+
+      The wait loop asked `mariadb-admin ping`, which answers on the **local socket**
+      seconds before the server accepts TCP connections and before the init scripts have
+      created the user. Measured locally with a fresh volume: ping reported ready at
+      **11s**, PHP could actually connect at **17s** — a six-second window where the
+      check lied. The branch runs landed outside it; the main run, sharing the runner
+      with the image publish, landed inside.
+
+      Now the loop waits for a real PDO connection with the real credentials. There is no
+      intermediate signal left to be wrong about.
+
+      **Third time this session with the same shape of mistake**, so it is worth naming:
+      | Checked | Should have checked |
+      |---|---|
+      | "container running" | that a request answers |
+      | uid was changed | that the permissions actually work |
+      | `mariadb-admin ping` | that a connection succeeds |
+
+      A green branch and a red main is also a reminder that branch CI is not proof:
+      timing differs, and the merge runs alongside the publish workflow.

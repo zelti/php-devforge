@@ -41,12 +41,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     vim nano less \
     cron apt-transport-https ca-certificates mailutils iputils-ping \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && set -- gd intl zip pdo_mysql pdo_pgsql soap xsl bcmath mbstring exif pcntl \
-    # From PHP 8.5 opcache is compiled into the binary and the build no longer
-    # produces opcache.so, so docker-php-ext-install fails on it. Detected from
-    # the base image rather than passed in, so one Dockerfile still serves every
-    # version.
-    && if [ "$(php -r 'echo PHP_VERSION_ID;')" -lt 80500 ]; then set -- "$@" opcache; fi \
+    # opcache and mbstring are deliberately absent: the official php images already
+    # ship both (opcache enabled in conf.d, mbstring compiled into the binary via
+    # --enable-mbstring). Asking for them recompiled them for nothing, and from
+    # PHP 8.5 opcache produces no shared module at all, which failed the build.
+    && set -- gd intl zip pdo_mysql pdo_pgsql soap xsl bcmath exif pcntl \
     && docker-php-ext-install -j"$(nproc)" "$@" \
     && rm -rf /var/lib/apt/lists/*
 

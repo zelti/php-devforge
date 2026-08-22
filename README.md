@@ -14,7 +14,7 @@ PHP DevForge is a comprehensive Docker-based development environment designed to
 
 - **Automatic Domain Generation**: Create local domains without manual configuration
 - **Local SSL Certificates**: Auto-generated certificates with mkcert for secure HTTPS development
-- **PHP Version Switching**: Switch between PHP versions via URL parameters
+- **PHP 8.3, 8.4 and 8.5**: switch per request from the URL, or set a default
 - **Live Code Editing**: Shared volumes allow real-time code changes
 - **Multi-Container Setup**: Apache, PHP-FPM, DNS, and optional database services
 
@@ -84,23 +84,20 @@ forge:reload
 # Check current PHP version
 forge:current
 
-# Switch to PHP 8.3
+# Switch the default PHP version
 forge:use:php83
-
-# Switch to PHP 8.4
 forge:use:php84
+forge:use:php85
 
-# Access PHP 8.3 container
+# Open a shell in a PHP container
 forge:exec:php83
-
-# Access PHP 8.4 container
 forge:exec:php84
+forge:exec:php85
 
-# View PHP 8.3 logs
+# Follow the logs
 forge:logs:php83
-
-# View PHP 8.4 logs
 forge:logs:php84
+forge:logs:php85
 ```
 
 ### 🌐 Accessing Your Projects
@@ -132,10 +129,14 @@ forge:logs:php84
    - The URL is constructed by reversing the folder path segments separated by `--`
 
 3. **PHP Version Switching:**
-   Append `--p83` or `--p84` to the URL to use specific PHP versions:
-   - `https://public--project--folder.phpforge.dev` (uses default PHP version)
-   - `https://public--project--folder--p83.phpforge.dev` (forces PHP 8.3)
-   - `https://public--project--folder--p84.phpforge.dev` (forces PHP 8.4)
+   Append `--pNN` to the host to pick a version for that request only:
+   - `https://my-app--sites.phpforge.dev` — the default from `.env`
+   - `https://my-app--sites--p83.phpforge.dev` — PHP 8.3
+   - `https://my-app--sites--p84.phpforge.dev` — PHP 8.4
+   - `https://my-app--sites--p85.phpforge.dev` — PHP 8.5
+
+   The backend is derived from the host name, so adding a PHP version needs no
+   configuration change — only a service in `docker-compose.yml`.
 
 ### 🔄 Development Workflow
 
@@ -143,6 +144,27 @@ forge:logs:php84
 - Changes appear immediately without restarting containers
 - Use Xdebug for debugging (configure your IDE to listen on port **9003**, the Xdebug 3 default)
 - Access PHP containers via `forge:exec:php84` (or `forge:exec:php83` for PHP 8.3)
+
+## 🌐 Local DNS
+
+The installer offers to set this up. It routes **only** your development domain to
+the stack's dnsmasq; the rest of your DNS is untouched, so stopping the containers
+never costs you internet access.
+
+```bash
+./setup-local-dns.sh            # apply
+./setup-local-dns.sh --status   # show what is configured
+./setup-local-dns.sh --test     # check resolution
+./setup-local-dns.sh --remove   # undo: deletes one file
+```
+
+dnsmasq listens on `127.0.0.1:${DNS_PORT}` rather than port 53, which is usually
+taken by systemd-resolved, Pi-hole or similar. The installer picks a free port and
+writes it to `.env`; change it there if you need to.
+
+Supported: Linux with systemd-resolved, and macOS via `/etc/resolver`. On anything
+else the script prints instructions and **changes nothing**, rather than rewriting
+your DNS in a way that could break when the containers are down.
 
 ## ✏️ Customising Without Breaking Upgrades
 
@@ -245,7 +267,8 @@ They are real service definitions rather than commented-out YAML, so
 
 ### 🔨 Development Tools
 - **Composer**: PHP dependency manager (pre-installed)
-- **Node.js 19**: Via NVM (Node Version Manager)
+- **Node.js 24 LTS**: via NVM. The version is `NODE_VERSION` in `.env` (only applies when you build your own images)
+- **pnpm**: installed alongside npm and preferred; typing `npm` points you at it
 - **Git**: Version control
 - **Xdebug**: PHP debugging extension
 - **Cron**: Task scheduling support
@@ -291,10 +314,12 @@ Plain PHP app → `plain-php--site.phpforge.dev`
 ### ❓ Common Issues
 
 - **DNS resolution not working**: Ensure you ran `./setup-local-dns.sh` and restarted your browser or system. You may need to flush DNS cache.
+- **PHP version not switching**: check `PHP_VERSION` in `.env` (83, 84 or 85), or append `--p83`/`--p84`/`--p85` to the host. `forge:current` prints the default.
+- **`npm` prints a message about pnpm**: intentional. npm still runs; pnpm is preferred here.
+- **An `.ini` in `custom/php.d/` seems ignored**: recreate the container, `docker compose up -d --force-recreate php84dev`. A restart alone does not re-read it.
 - **SSL certificate not trusted**: Make sure you ran `./install_cert.sh` and restart your browser afterwards. Check the CA is present with `openssl verify -CAfile .caroot/rootCA.pem certificates/php-devforge.pem`. Firefox keeps its own trust store on Linux, so install `nss` (Arch) or `libnss3-tools` (Debian/Ubuntu) and re-run the script if Firefox still complains.
 - **Containers not starting**: Check that Docker and Docker Compose are installed and running. Ensure ports 80 and 443 are not in use by other services.
 - **Permission issues with public_html**: Check that `PUID`/`PGID` in `.env` match your own ids (`id -u`, `id -g`), then recreate the containers with `docker compose up -d --force-recreate`. The containers adopt those ids on startup, so files they write are owned by you.
-- **PHP version not switching**: Use the aliases `forge:use:php83` or `forge:use:php84` to change the default version, or append `--p83`/`--p84` to the URL.
 - **Aliases not working**: Ensure you sourced `aliases.bash` or added it to your `~/.bashrc`.
 
 For more help, check the logs with `docker compose logs` or create an issue on GitHub.

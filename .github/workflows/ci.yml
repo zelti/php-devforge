@@ -143,11 +143,15 @@ jobs:
               || { echo "expected PHP ${v:0:1}.${v:1:1}"; exit 1; }
           done
 
-      - name: opcache is present in every version
+      # Neither is installed by us any more: the base images already provide them.
+      # If that ever stops being true, this catches it instead of a user finding out.
+      - name: opcache and mbstring are present in every version
         run: |
           for s in php83dev php84dev php85dev; do
-            got="$(docker compose exec -T "$s" php -r 'echo extension_loaded("Zend OPcache")?"yes":"no";')"
-            test "$got" = "yes" || { echo "$s: opcache missing"; exit 1; }
+            got="$(docker compose exec -T "$s" php -r 'echo extension_loaded("Zend OPcache") && extension_loaded("mbstring") ? "yes" : "no";')"
+            test "$got" = "yes" || { echo "$s: opcache or mbstring missing"; exit 1; }
+            len="$(docker compose exec -T "$s" php -r 'echo mb_strlen("ñandú");')"
+            test "$len" = "5" || { echo "$s: mbstring not working (got $len)"; exit 1; }
             echo "$s ok"
           done
 

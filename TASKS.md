@@ -743,3 +743,45 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
         Compose **errors on a file listed but missing**, so the installer creates it.
       - The `FROM ghcr.io/.../php:8.4-dev` pattern for extra extensions, documented in
         the README: a few lines that keep inheriting upstream fixes.
+
+- [x] **25. Two extensions were being compiled for nothing** — DONE
+      Asked while reviewing customisation: which extensions does the base image already
+      ship? Checking turned up two we were recompiling on every build of every version:
+      - **`mbstring`** — built into the binary. `php -i` shows `'--enable-mbstring'` in
+        the configure command, and `ReflectionExtension` reports the extension version as
+        PHP's own, which only happens when it is compiled in.
+      - **`opcache`** — the base image already enables it: `docker-php-ext-opcache.ini`
+        sits in `conf.d` for 8.3 and 8.4, and 8.5 has it in the binary.
+
+      `docker-php-ext-enable` noticed both were already loaded, warned, and skipped
+      writing the ini — so the compile time and the leftover `.so` bought nothing. Three
+      versions, now also built for two architectures with arm64 under emulation.
+
+      **This replaces yesterday's fix rather than adding to it.** Task 23 dodged the 8.5
+      failure with a version conditional; the real cause was asking for an extension the
+      image already had. The conditional is gone:
+
+      ```dockerfile
+      && set -- gd intl zip pdo_mysql pdo_pgsql soap xsl bcmath exif pcntl
+      ```
+
+      Verified by building 8.5 from scratch: every extension still loaded, opcache
+      present, `mb_strlen("ñandú")` = 5. CI now asserts both across all three versions,
+      so if a future base image stops shipping them we find out instead of a user.
+
+- [x] **26. README did not match what the project does** — DONE
+      Asked directly: is the README up to date? It was not, and parts were **wrong**
+      rather than merely missing — worse, because a reader trusts them:
+      - "Node.js 19" — replaced yesterday by 24
+      - "83 for 8.3, 84 for 8.4" — 8.5 exists now
+      - version switching documented only `--p83` / `--p84`
+      Undocumented: pnpm, `DNS_PORT`, `setup-local-dns.sh --status/--remove`, and the
+      local DNS behaviour of touching only the dev domain.
+
+      Also a real gap in the code, not just the docs: **`aliases.bash` had no 8.5
+      shortcuts**. `forge:use:php85`, `forge:exec:php85` and `forge:logs:php85` added and
+      tested against a running container.
+
+      New README sections for local DNS and troubleshooting entries for the things that
+      look like bugs but are not: the pnpm nudge, and a `custom/php.d` ini needing
+      `--force-recreate` rather than a plain restart.

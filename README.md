@@ -77,7 +77,7 @@ for keeping many projects on one shared environment with no per-project setup.
 git clone https://github.com/zelti/php-devforge.git
 cd php-devforge
 ./install.sh            # asks a few questions, sets everything up
-docker compose up -d
+forge start
 ```
 
 Then open **https://welcome--sites.phpforge.dev**.
@@ -115,17 +115,15 @@ Then open **https://welcome--sites.phpforge.dev**.
 
    Nothing needs `sudo` except the DNS step, and only if you accept it.
 
-3. **Load the shortcuts (optional):**
-   ```bash
-   source aliases.bash
-   ```
-   Or add that line to your `~/.bashrc`, using the full path to this folder.
+3. **Use it from anywhere:**
+   The installer links `forge` into `~/.local/bin`, so the command works from any
+   directory and in any shell. `forge help` lists everything.
 
 4. **Start the containers:**
     ```bash
     docker compose up -d
     ```
-    (If you sourced the aliases, you can use `forge:start` instead)
+    Or `forge start`, which works from anywhere.
 
     Check it works: `https://welcome--sites.phpforge.dev`
 
@@ -134,33 +132,25 @@ Then open **https://welcome--sites.phpforge.dev**.
 ### ▶️ Starting and Stopping
 
 ```bash
-# Start all services
-forge:start
+forge start                  # start everything
+forge stop
+forge restart
+forge status                 # what is running, and how it is configured
 
-# Stop all services
-forge:stop
+forge use 8.5                # set the default PHP version
+forge shell 8.4              # open a shell in a container
+forge logs 8.4               # follow its logs
 
-# Reload services
-forge:reload
+forge images build|pull      # build locally, or use the published images
+forge certs                  # regenerate the certificates
+forge dns status             # inspect the local DNS
 
-# Check current PHP version
-forge:current
-
-# Switch the default PHP version
-forge:use:php83
-forge:use:php84
-forge:use:php85
-
-# Open a shell in a PHP container
-forge:exec:php83
-forge:exec:php84
-forge:exec:php85
-
-# Follow the logs
-forge:logs:php83
-forge:logs:php84
-forge:logs:php85
+forge help
 ```
+
+`forge` works from any directory, in any shell. The installer links it into
+`~/.local/bin`. Version arguments accept `8.5` or `85`, and the available versions
+come from `docker-compose.yml` — add a service and `forge use 8.6` just works.
 
 ### 🌐 Accessing Your Projects
 
@@ -205,7 +195,7 @@ forge:logs:php85
 - Edit code in your IDE (files are volume-mounted for live updates)
 - Changes appear immediately without restarting containers
 - Use Xdebug for debugging (configure your IDE to listen on port **9003**, the Xdebug 3 default)
-- Access PHP containers via `forge:exec:php84` (or `forge:exec:php83` for PHP 8.3)
+- Open a shell in a container with `forge shell 8.4`
 
 ## 🌐 Local DNS
 
@@ -376,7 +366,7 @@ Plain PHP app → `plain-php--site.phpforge.dev`
 ### ❓ Common Issues
 
 - **DNS resolution not working**: Ensure you ran `./setup-local-dns.sh` and restarted your browser or system. You may need to flush DNS cache.
-- **PHP version not switching**: check `PHP_VERSION` in `.env` (83, 84 or 85), or append `--p83`/`--p84`/`--p85` to the host. `forge:current` prints the default.
+- **PHP version not switching**: check `PHP_VERSION` in `.env` (83, 84 or 85), or append `--p83`/`--p84`/`--p85` to the host. `forge status` prints the default.
 - **`npm` prints a message about pnpm**: intentional. npm still runs; pnpm is preferred here.
 - **An `.ini` in `custom/php.d/` seems ignored**: recreate the container, `docker compose up -d --force-recreate php84dev`. A restart alone does not re-read it.
 - **SSL certificate not trusted**: Make sure you ran `./install_cert.sh` and restart your browser afterwards. Check the CA is present with `openssl verify -CAfile .caroot/rootCA.pem certificates/php-devforge.pem`. Firefox keeps its own trust store on Linux, so install `nss` (Arch) or `libnss3-tools` (Debian/Ubuntu) and re-run the script if Firefox still complains.

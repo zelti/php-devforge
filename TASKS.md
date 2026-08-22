@@ -652,7 +652,7 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       The last `docker-compose` mention in `README.md` is gone too, so the project is
       fully on v2.
 
-- [ ] **18. Replace the aliases with a real `forge` command** 💬 DISCUSS FIRST
+- [x] **18. Replace the aliases with a real `forge` command** — DONE
       Idea from the user: instead of shell aliases, ship a single executable so you can
       run `forge start`, `forge stop`, `forge use 8.3`, `forge logs 8.4`.
 
@@ -811,3 +811,34 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
 
       **Note for task 22 (i18n):** this is documentation only. The scripts still speak
       English.
+
+**Task 18 — how it was resolved**
+
+`bin/forge`, with subcommands rather than the old `forge:use:php85` names. The
+aliases only worked in bash: zsh handled the colons awkwardly and fish not at all, so
+the project silently excluded those users while the README told everyone to use them.
+
+- **Versions are discovered, not listed.** `forge` reads the PHP services out of
+  `docker compose config`, so adding `php86dev` makes `forge use 8.6` work with no
+  change to the binary. `8.5` and `85` are both accepted; anything else is refused
+  with the available list, rather than passed through to docker.
+- **`forge install`** now fronts the installer, and `certs` and `dns` front their
+  scripts, so there is one entry point instead of five. `install.sh` stays at the repo
+  root because that is what a first-time reader looks for.
+- **The installer symlinks it into `~/.local/bin`** — a symlink, not a copy, so
+  `git pull` updates the command. It checks whether that directory is on `PATH` and
+  prints the line to add if not, and refuses to clobber an existing unrelated `forge`.
+- **`aliases.bash` became a PATH shim** and documents the old-to-new mapping, since
+  the subcommand-only option was chosen over keeping both.
+
+**On the language.** Rust was considered — the honest answer was no, for now. The
+command is a wrapper around `docker compose` and `sed` on `.env`; in Rust it would be
+`Command::new("docker")` throughout, so the type safety and performance barely apply,
+while distribution would mean four platform binaries and a release pipeline. This same
+session *removed* a Go toolchain from `install_cert.sh` for the same reason. Worth
+revisiting if `forge` ever grows real logic — parsing and validating config, holding
+state, a TUI — where `clap` would earn its keep.
+
+Verified from `/tmp`, outside the checkout: `forge use 8.5` changed `.env` **and the
+site served PHP 8.5.9**; `forge use 84` switched back. CI exercises the command
+directly rather than only its README examples.

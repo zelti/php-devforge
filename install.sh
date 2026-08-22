@@ -15,7 +15,7 @@ warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 title() { echo -e "\n${BLUE}$1${NC}"; }
 
-ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0
+ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0; SKIP_LINK=0
 OPT_DOMAIN=""; OPT_DIR=""; OPT_PHP=""; OPT_DNS_PORT=""; OPT_IMAGES=""
 
 usage() {
@@ -29,6 +29,7 @@ Usage: $0 [OPTIONS]
   --php=83|84           default PHP version (default: 84)
   --dns-port=N          port for the local DNS (default: first free one)
   --images=pull|build   use the published images, or build your own (default: pull)
+  --skip-link           do not put `forge` on your PATH
   --skip-cert           do not generate certificates
   --skip-dns            do not touch the system DNS
   -y, --yes             accept every default, ask nothing
@@ -45,6 +46,7 @@ for arg in "$@"; do
         --php=*)          OPT_PHP="${arg#*=}" ;;
         --dns-port=*)     OPT_DNS_PORT="${arg#*=}" ;;
         --images=*)       OPT_IMAGES="${arg#*=}" ;;
+        --skip-link)      SKIP_LINK=1 ;;
         --skip-cert)      SKIP_CERT=1 ;;
         --skip-dns)       SKIP_DNS=1 ;;
         -y|--yes)         ASSUME_YES=1 ;;
@@ -213,6 +215,29 @@ echo "      sites/     symlinks to each project's public folder"
 echo "      sites/welcome  a test page"
 
 # ---------- optional steps ----------
+# ---------- forge on PATH ----------
+# A symlink, not a copy, so `git pull` updates the command too.
+title "The forge command"
+if [ "$SKIP_LINK" -eq 1 ]; then
+    warn "Skipped (--skip-link). Run it as $(pwd)/bin/forge"
+else
+    BIN_DIR="$HOME/.local/bin"
+    LINK="$BIN_DIR/forge"
+    if [ -e "$LINK" ] && [ "$(readlink -f "$LINK")" != "$(readlink -f bin/forge)" ]; then
+        warn "$LINK exists and points somewhere else. Left alone."
+        warn "Run this project's copy as $(pwd)/bin/forge"
+    else
+        mkdir -p "$BIN_DIR"
+        ln -sfn "$(pwd)/bin/forge" "$LINK"
+        info "forge linked into $BIN_DIR"
+        case ":$PATH:" in
+            *":$BIN_DIR:"*) info "$BIN_DIR is on your PATH: just type 'forge'" ;;
+            *) warn "$BIN_DIR is not on your PATH yet. Add this to your shell profile:"
+               echo "      export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+        esac
+    fi
+fi
+
 title "Certificates"
 if [ "$SKIP_CERT" -eq 1 ]; then
     warn "Skipped (--skip-cert). Run ./install_cert.sh when you want HTTPS."
@@ -239,8 +264,9 @@ cat <<EOF
     custom/php.d/*.ini          PHP settings, no rebuild
     docker-compose.local.yml    your own services and overrides
 
-  Start it:      docker compose up -d
-  Shortcuts:     source $(pwd)/aliases.bash
+  Start it:      forge start
+  What is up:    forge status
+  Everything:    forge help
   Test page:     https://welcome--sites.${DOMAIN}
 
   Put your code in $PROJ/projects and link it from $PROJ/sites:

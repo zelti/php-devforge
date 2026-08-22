@@ -77,7 +77,7 @@ pensado para tener muchos proyectos sobre un mismo entorno, sin configurar ningu
 git clone https://github.com/zelti/php-devforge.git
 cd php-devforge
 ./install.sh            # hace unas preguntas y deja todo listo
-docker compose up -d
+forge start
 ```
 
 Y abre **https://welcome--sites.phpforge.dev**.
@@ -131,21 +131,26 @@ Y abre **https://welcome--sites.phpforge.dev**.
 ## 💻 Uso
 
 ```bash
-forge:start          # levantar
-forge:stop           # detener
-forge:reload         # recargar
-forge:current        # ver la versión por defecto
+forge start                  # levantar todo
+forge stop
+forge restart
+forge status                 # qué corre y cómo está configurado
 
-forge:use:php83      # cambiar la versión por defecto
-forge:use:php84
-forge:use:php85
+forge use 8.5                # cambiar la versión por defecto
+forge shell 8.4              # entrar a un contenedor
+forge logs 8.4               # seguir sus logs
 
-forge:exec:php83     # entrar al contenedor
-forge:exec:php84
-forge:exec:php85
+forge images build|pull      # construir en local, o usar las publicadas
+forge certs                  # regenerar los certificados
+forge dns status             # ver el DNS local
 
-forge:logs:php84     # seguir los logs
+forge help
 ```
+
+`forge` funciona desde cualquier carpeta y en cualquier shell. El instalador lo
+enlaza en `~/.local/bin`. Los argumentos de versión aceptan `8.5` u `85`, y las
+versiones disponibles salen de `docker-compose.yml` — añade un servicio y
+`forge use 8.6` funciona solo.
 
 ### 🌐 Tus proyectos
 

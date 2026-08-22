@@ -70,6 +70,19 @@ jobs:
           grep -q "^PUID=$(id -u)$" .env
           grep -q "^PGID=$(id -g)$" .env
 
+      # forge is the documented entry point now, so it gets exercised rather than
+      # only its README examples.
+      - name: the forge command works
+        run: |
+          test -L "$HOME/.local/bin/forge" || { echo "installer did not link forge"; exit 1; }
+          export PATH="$HOME/.local/bin:$PATH"
+          cd /tmp    # it must work from anywhere, not just the checkout
+          forge help | grep -q "8.3 8.4 8.5" || { echo "versions not discovered"; exit 1; }
+          forge status | grep -q "PHP DevForge"
+          forge images status
+          # unknown versions must be refused, not passed to docker
+          if forge use 9.9 2>/dev/null; then echo "9.9 should have been rejected"; exit 1; fi
+
       - name: build images
         # Every PHP version is built. 8.5 broke silently once: opcache became
         # built-in and docker-php-ext-install started failing on it.

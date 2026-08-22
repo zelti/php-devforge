@@ -73,6 +73,23 @@ jobs:
             > "$DIR/projects/my-app/public/index.php"
           ln -sfn ../projects/my-app/public "$DIR/sites/my-app"
 
+      - name: diagnostics
+        run: |
+          echo "--- PROJECTS_DIR in .env ---"
+          grep '^PROJECTS_DIR=' .env
+          echo "--- mount as compose resolves it ---"
+          docker compose config | grep -A3 'public_html' | head -12
+          echo "--- on the host ---"
+          DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+          ls -la "$DIR" "$DIR/sites" "$DIR/sites/welcome" 2>&1 | head -30
+          echo "--- inside apachedev ---"
+          docker compose exec -T apachedev ls -la /home/php-devforge/ /home/php-devforge/public_html/ 2>&1 | head -20
+          echo "--- DEV_DOMAIN inside apachedev ---"
+          docker compose exec -T apachedev printenv DEV_DOMAIN PHP_VERSION
+          echo "--- what the response actually is ---"
+          curl -sv --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
+            https://welcome--sites.phpforge.dev/ 2>&1 | tail -25
+
       - name: the welcome page is served over HTTPS
         run: |
           curl -fsS --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \

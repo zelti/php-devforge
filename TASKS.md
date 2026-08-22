@@ -496,10 +496,37 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       | `.php` never returns `<?php` | the source-code leak (HTTPS **and** plain HTTP) |
       | file written by PHP is owned by the host uid | the permission model breaking |
 
+      **The first run failed, and that was the point.** 403 on every page. The named
+      volume is shared; `useradd -m` creates the home directory mode 700, so the volume
+      was born 700 and Apache — a different uid — could not traverse it. The entrypoint
+      chmods it to 755, but it did so *after* a recursive chown of `/usr/local/nvm`
+      (tens of thousands of files), and Apache starts in parallel. Invisible locally,
+      because PUID there matches the image default so neither step runs. Fixed in the
+      image (home is 755 from the start), in the entrypoint (cheap fix first), and in
+      the workflow itself, which waited for "container running" — a state that says
+      nothing about readiness — instead of polling for a real response.
+
+      **DNS is covered too.** `setup-local-dns.sh` was the last untested piece and the
+      one with the widest blast radius: it edits the system resolver, so a bug there
+      breaks the user's machine, not just this project. The checks run *after* the
+      `--resolve` ones, so a failure points squarely at the DNS work:
+      it configures for real; the domain and an arbitrary subdomain resolve through the
+      system resolver; `github.com` and `debian.org` still resolve; **they still resolve
+      with dnsmasq stopped** (the `Domains=~.` regression, now guarded); pages are served
+      without `--resolve`, the path a browser actually takes; and `--remove` leaves DNS
+      working. Confirmed along the way that GitHub's Ubuntu runners do run
+      systemd-resolved, so the Linux branch is exercised end to end.
+
+      **Annotations are at zero.** The run was green while GitHub still painted six red
+      annotations from hadolint findings below the failure threshold — which trains you
+      to ignore the panel. Three were fixed (DL4006 pipefail, SC2046, DL3003); three are
+      ignored in `.hadolint.yaml`, each with its reason. `actions/checkout` moved to v5.
+      The diagnostics step now runs only on failure.
+
       **Follow-ups:** builds take ~15 min with no layer cache — worth adding, or better,
       pulling published images once task 16 exists. macOS is not covered: GitHub's macOS
-      runners have no Docker daemon, so the macOS paths in `setup-local-dns.sh` and the
-      PUID/PGID behaviour stay unverified.
+      runners have no Docker daemon, so the `/etc/resolver` branch and the PUID/PGID
+      behaviour there stay unverified.
 
 - [ ] **16. Consider publishing prebuilt images** to GHCR so users do not wait ~15
       minutes on first run (compiles GD/intl/PECL, clones nvm, installs Node).

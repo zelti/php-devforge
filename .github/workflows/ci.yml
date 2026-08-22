@@ -289,9 +289,13 @@ jobs:
           curl -fsS https://my-app--sites.phpforge.dev/ | grep -q "my-app on PHP 8.4"
           curl -fsS https://my-app--sites--p83.phpforge.dev/ | grep -q "PHP 8.3"
 
-      - name: --remove undoes it
+      - name: --remove undoes it, with .env already gone
         run: |
+          # The cleanup order people actually use: delete .env, then undo the DNS
+          # change. Removal must not need config that is already gone.
+          mv .env /tmp/env.bak
           ./setup-local-dns.sh --remove
+          mv /tmp/env.bak .env
           test ! -f /etc/systemd/resolved.conf.d/50-php-devforge.conf
           getent hosts github.com >/dev/null || { echo "DNS broken after removal"; exit 1; }
           echo "clean"

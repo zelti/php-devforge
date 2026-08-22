@@ -247,7 +247,7 @@ else
             warn "Unknown database '$d', skipped"
         fi
     done
-    if confirm "Catch outgoing mail at maildev.${DOMAIN}?"; then
+    if confirm "Catch outgoing mail at mail.${DOMAIN}?"; then
         PROFILES="${PROFILES:+$PROFILES,}mail"
     fi
 fi

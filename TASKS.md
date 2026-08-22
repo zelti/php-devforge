@@ -913,8 +913,19 @@ directly rather than only its README examples.
       with `forge db list|on|off`, which edits `COMPOSE_PROFILES` in `.env` — verified
       that compose honours that variable from `.env`, including comma-separated values.
 
-      **Mail catcher** (Mailpit) behind the `mail` profile, served at
-      `maildev.<domain>` so there is no port to remember. `forge mail on|off`.
+      **Mail catcher** (Mailpit) behind the `mail` profile, served at `mail.<domain>`
+      so there is no port to remember. `forge mail on|off`.
+
+      Mailpit over MailDev on the numbers: **52 MB against 340 MB**, since MailDev
+      carries a Node runtime. Both are actively maintained — MailDev was updated two
+      days before this was written, so it is not a maintained-vs-abandoned choice.
+      MailHog, despite more stars, has not moved since February 2024. Mailpit's API is
+      also what CI uses to read the inbox back.
+
+      **The URL says `mail`, not the tool's name.** The service was first called
+      `maildev` while running Mailpit, which would have sent anyone reading `docker ps`
+      to the wrong documentation. Now the container is `mailpit` and the URL is neutral,
+      so swapping the tool later does not invalidate a bookmarked address.
 
       Three things that only surfaced by running it:
       - **PostgreSQL 18 changed its mount point.** 16 and 17 take

@@ -296,7 +296,7 @@ jobs:
             echo "both databases reachable\n";'
           # Mail: sent over SMTP from PHP, read back through the web UI.
           docker compose exec -T php84dev php -r '
-            $s = fsockopen("maildev", 1025, $e, $es, 5) or exit(1);
+            $s = fsockopen("mailpit", 1025, $e, $es, 5) or exit(1);
             fgets($s);
             foreach (["EHLO ci","MAIL FROM:<a@ci.test>","RCPT TO:<b@ci.test>","DATA"] as $c) {
                 fwrite($s, "$c\r\n"); fgets($s);
@@ -304,9 +304,9 @@ jobs:
             fwrite($s, "Subject: ci-probe\r\n\r\nbody\r\n.\r\n"); fgets($s);
             fwrite($s, "QUIT\r\n");'
           sleep 3
-          curl -fsS -k --resolve maildev.phpforge.dev:443:127.0.0.1 \
-            "https://maildev.phpforge.dev/api/v1/messages?limit=5" | grep -q ci-probe
-          echo "mail captured and served at maildev.<domain>"
+          curl -fsS -k --resolve mail.phpforge.dev:443:127.0.0.1 \
+            "https://mail.phpforge.dev/api/v1/messages?limit=5" | grep -q ci-probe
+          echo "mail captured and served at mail.<domain>"
 
       # nginx sat commented out and broken since the first commit precisely because
       # nothing exercised it. It is an alternative to Apache, not an addition: both

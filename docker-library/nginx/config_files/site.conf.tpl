@@ -26,12 +26,12 @@ server {
     listen 80;
     listen 443 ssl;
     http2 on;
-    server_name maildev.${DEV_DOMAIN};
+    server_name mail.${DEV_DOMAIN};
     ssl_certificate     /etc/nginx/ssl/php-devforge.pem;
     ssl_certificate_key /etc/nginx/ssl/php-devforge.key;
     location / {
         resolver 127.0.0.11 ipv6=off valid=10s;
-        set $mail "maildev:8025";
+        set $mail "mailpit:8025";
         proxy_pass http://$mail;
         proxy_set_header Host $host;
         proxy_http_version 1.1;

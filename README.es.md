@@ -297,14 +297,14 @@ No arranca nada que no elijas. El instalador pregunta; después:
 forge db list              # cuáles existen y cuáles están encendidas
 forge db on pg18
 forge db off mariadb12
-forge mail on              # capturador de correo en maildev.<dominio>
+forge mail on              # capturador de correo en mail.<dominio>
 ```
 
 | Nombre | Imagen | Puerto en tu máquina |
 |---|---|---|
 | `pg16` `pg17` `pg18` | postgres 16 / 17 / 18 | 5416 / 5417 / 5418 |
 | `mariadb11` `mariadb12` | mariadb 11.8 LTS / 12 | 3311 / 3312 |
-| `mail` | Mailpit | interfaz en `https://maildev.<dominio>` |
+| `mail` | Mailpit | interfaz en `https://mail.<dominio>` |
 
 Los puertos codifican la versión, así que varias pueden convivir — útil para probar
 una migración contra la versión que usarás en producción.
@@ -319,8 +319,8 @@ new PDO("mysql:host=mariadb12dev;port=3306;dbname=php-devforge", $user, $pass);
 Las credenciales son `USER_DEV` / `PASSWD_DEV` del `.env`. Los puertos de arriba son
 para tus propias herramientas: un cliente gráfico, `psql`, un script de migración.
 
-**Correo**: apunta el SMTP de tu framework a `maildev:1025`, sin autenticación ni TLS.
-Todo lo enviado se captura y se ve en `https://maildev.<dominio>`; nada sale de tu
+**Correo**: apunta el SMTP de tu framework a `mailpit:1025`, sin autenticación ni TLS.
+Todo lo enviado se captura y se ve en `https://mail.<dominio>`; nada sale de tu
 máquina.
 
 ## 🧩 Servicios opcionales

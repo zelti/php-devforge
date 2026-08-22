@@ -91,17 +91,23 @@ services:
       - MARIADB_DATABASE=${USER_DEV}
 
   # Catches every mail your projects send, instead of delivering it. The web UI is
-  # served at maildev.${DEV_DOMAIN} by the Apache/nginx vhost, so there is no port
-  # to remember.
+  # served at mail.${DEV_DOMAIN} by the Apache/nginx vhost, so there is no port to
+  # remember.
   #
-  #   forge db is for databases; this one:  forge mail on / off
+  # The service is named after the tool and the URL is not, on purpose: swapping
+  # Mailpit for something else should not invalidate a URL people have bookmarked.
   #
-  # From PHP, point your framework's SMTP settings at maildev:1025 (no auth, no TLS).
-  maildev:
+  # Mailpit over MailDev: 52 MB against 340 MB, since MailDev carries a Node runtime.
+  # Both are actively maintained; MailHog has not moved since 2024.
+  #
+  #   forge mail on / off
+  #
+  # From PHP, point your framework's SMTP settings at mailpit:1025 (no auth, no TLS).
+  mailpit:
     profiles: ["mail"]
     image: axllent/mailpit:latest
-    container_name: maildev
-    hostname: ${USERNAME}-maildev
+    container_name: mailpit
+    hostname: ${USERNAME}-mailpit
     environment:
       - MP_SMTP_AUTH_ACCEPT_ANY=1
       - MP_SMTP_AUTH_ALLOW_INSECURE=1

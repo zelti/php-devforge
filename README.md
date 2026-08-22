@@ -301,14 +301,14 @@ Nothing starts unless you pick it. The installer asks; afterwards:
 forge db list              # what exists, and what is on
 forge db on pg18
 forge db off mariadb12
-forge mail on              # a mail catcher at maildev.<domain>
+forge mail on              # a mail catcher at mail.<domain>
 ```
 
 | Name | Image | Port on your machine |
 |---|---|---|
 | `pg16` `pg17` `pg18` | postgres 16 / 17 / 18 | 5416 / 5417 / 5418 |
 | `mariadb11` `mariadb12` | mariadb 11.8 LTS / 12 | 3311 / 3312 |
-| `mail` | Mailpit | web UI at `https://maildev.<domain>` |
+| `mail` | Mailpit | web UI at `https://mail.<domain>` |
 
 The ports encode the version, so several can run at once — handy for testing a
 migration against the version you will deploy to.
@@ -323,8 +323,8 @@ new PDO("mysql:host=mariadb12dev;port=3306;dbname=php-devforge", $user, $pass);
 Credentials are `USER_DEV` / `PASSWD_DEV` from `.env`. The host ports above are for
 your own tools — a GUI client, `psql`, a migration script.
 
-**Mail**: point your framework's SMTP settings at `maildev:1025`, no auth and no TLS.
-Everything sent is captured and shown at `https://maildev.<domain>`; nothing leaves
+**Mail**: point your framework's SMTP settings at `mailpit:1025`, no auth and no TLS.
+Everything sent is captured and shown at `https://mail.<domain>`; nothing leaves
 your machine.
 
 ## 🧩 Optional Services

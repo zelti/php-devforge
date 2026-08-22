@@ -91,10 +91,10 @@ cmd_mail() {
     case "${1:-status}" in
         on)  write_profiles $keep mail
              docker compose up -d
-             info "Mail catcher at https://maildev.$(sed -ne 's/^DEV_DOMAIN=//p' .env)"
-             echo "  Point your app's SMTP at maildev:1025 (no auth, no TLS)" ;;
+             info "Mail catcher at https://mail.$(sed -ne 's/^DEV_DOMAIN=//p' .env)"
+             echo "  Point your app's SMTP at mailpit:1025 (no auth, no TLS)" ;;
         off) write_profiles $keep
-             docker compose stop maildev 2>/dev/null || true
+             docker compose stop mailpit 2>/dev/null || true
              docker compose up -d
              info "Mail catcher off" ;;
         status|"")
@@ -205,7 +205,7 @@ PHP DevForge
 
   forge db list                which databases exist, and which are on
   forge db on|off <name>       turn one on or off
-  forge mail on|off            a mail catcher at maildev.<domain>
+  forge mail on|off            a mail catcher at mail.<domain>
 
   forge images build|pull      build images locally, or use the published ones
   forge certs                  regenerate the HTTPS certificates

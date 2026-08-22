@@ -411,7 +411,12 @@ siguen validando y no pueden romperse en silencio.
 **Extensiones de PHP:** GD, Intl, Zip, PDO MySQL, PDO PostgreSQL, SOAP, XSL, BC Math,
 OPcache, Mbstring, Exif, PCNTL, Imagick, Redis, APCu, Xdebug
 
-**Herramientas:** Composer, Node.js 24 LTS (vía NVM), pnpm, Git, Cron
+**Herramientas:** Composer, Node.js 24 LTS vía NVM, pnpm, Git, Cron
+
+`NODE_VERSION` en `.env` fija la versión de Node, y aplica cuando construyes tus
+propias imágenes — una descargada ya la trae fijada. `npm` sigue funcionando pero te
+apunta a pnpm. Xdebug está apagado hasta que lo enciendas con el comando `xdebug`
+dentro de un contenedor; tu editor debe escuchar en el puerto **9003**.
 
 ## 🐛 Problemas comunes
 
@@ -435,9 +440,14 @@ OPcache, Mbstring, Exif, PCNTL, Imagick, Redis, APCu, Xdebug
 
 1. Haz un fork y crea una rama
 2. Haz tus cambios
-3. Comprueba que la CI pasa — construye e instala en una máquina limpia, así que
+3. Comprueba que la CI pasa — instala y ejecuta todo en una máquina limpia, así que
    detecta bastante
 4. Abre un pull request describiendo qué cambia y por qué
+
+La CI construye las tres versiones de PHP, ejecuta el instalador, configura el DNS,
+comprueba que un `.php` nunca se sirve como código fuente, que los archivos creados
+en los contenedores son tuyos, y que Apache y nginx sirven lo mismo. Si está en
+verde, funciona en una máquina que no es la tuya.
 
 ## 📄 Licencia
 

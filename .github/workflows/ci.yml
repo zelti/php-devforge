@@ -13,7 +13,7 @@ jobs:
     name: Shell and Dockerfile lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: shellcheck
         run: |
@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: compose file parses
         run: |
@@ -83,6 +83,7 @@ jobs:
           ln -sfn ../projects/my-app/public "$DIR/sites/my-app"
 
       - name: diagnostics
+        if: failure()
         run: |
           echo "--- PROJECTS_DIR in .env ---"
           grep '^PROJECTS_DIR=' .env

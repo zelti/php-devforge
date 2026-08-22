@@ -13,6 +13,9 @@ ARG NODE_VERSION=24
 ARG PNPM_VERSION=latest
 ARG PHP_XDEBUG=no
 
+# Without this a failure on the left of a pipe is swallowed (hadolint DL4006).
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NVM_DIR=${NVM_DIR}
 ENV NODE_VERSION=${NODE_VERSION}
@@ -38,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     vim nano less \
     cron apt-transport-https ca-certificates mailutils iputils-ping \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) \
+    && docker-php-ext-install -j"$(nproc)" \
     gd \
     intl \
     zip \
@@ -73,8 +76,7 @@ RUN echo 'php-devforge ALL=(ALL) NOPASSWD:SETENV: ALL' | EDITOR='tee -a' visudo 
 
 # Instalar NVM
 RUN git clone https://github.com/nvm-sh/nvm.git ${NVM_DIR} \
-    && cd ${NVM_DIR} \
-    && git checkout "$(git describe --abbrev=0 --tags --match "v[0-9]*" "$(git rev-list --tags --max-count=1)")" \
+    && git -C ${NVM_DIR} checkout "$(git -C ${NVM_DIR} describe --abbrev=0 --tags --match "v[0-9]*" "$(git -C ${NVM_DIR} rev-list --tags --max-count=1)")" \
     && chown -R php-devforge:www-data ${NVM_DIR} \
     && echo "export NVM_DIR=${NVM_DIR}" >> /etc/profile.d/nvm.sh \
     && echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /etc/profile.d/nvm.sh \

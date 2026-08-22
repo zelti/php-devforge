@@ -576,9 +576,46 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       runners have no Docker daemon, so the `/etc/resolver` branch and the PUID/PGID
       behaviour there stay unverified.
 
-- [ ] **16. Consider publishing prebuilt images** to GHCR so users do not wait ~15
-      minutes on first run (compiles GD/intl/PECL, clones nvm, installs Node).
-      Note: this interacts with task 8 — see option B there.
+- [x] **16. Publish prebuilt images to GHCR** — DONE (pending first publish)
+      A fresh install compiled GD, intl and PECL, cloned nvm and installed Node: about
+      15 minutes. Images are now published to `ghcr.io/zelti/php-devforge/*`.
+      Chosen over Docker Hub after checking the docs: public packages on GHCR are free
+      with **no storage, bandwidth or pull limits**, and Actions supplies `GITHUB_TOKEN`
+      so there are no secrets to manage. Docker Hub throttles anonymous pulls to about
+      100 per 6 hours **per IP** — one shared office or CI address exhausts it for
+      everybody, with a `toomanyrequests` error that looks like the project is broken.
+      - `.github/workflows/publish.yml`, triggered on pushes to `main` that touch
+        `docker-library/**`, plus `workflow_dispatch`. Multi-arch: `linux/amd64` and
+        `linux/arm64`, so Apple Silicon pulls a native image instead of building.
+      - Every service keeps its `build:` section. Verified that compose **falls back to
+        building** when a pull is not possible, so a fresh clone still works before
+        anything has been published, and `docker compose build` still rebuilds locally.
+
+      **Not done yet:** the first publish. New GHCR packages are created **private**;
+      they must be switched to public once, by hand, in the package settings, or pulls
+      fail with a confusing error.
+
+      **Known wart:** the publish matrix lists each PHP version, so adding one means
+      editing compose *and* that workflow. Worth generating from compose later.
+
+- [ ] **23. PHP 8.5 does not build** — opcache
+      Adding the service was exactly what the refactoring promised: 13 lines in
+      `docker-compose.yml`, no new Dockerfile, no vhost change. The image itself fails.
+
+      `docker-php-ext-install` dies with `cp: cannot stat 'modules/*'`. Each extension
+      was tested individually against `php:8.5-fpm`, and **opcache is the only one that
+      fails** — gd, intl, zip, pdo_mysql, pdo_pgsql, soap, xsl, bcmath, mbstring, exif
+      and pcntl all build. It looks like opcache is no longer produced as a shared
+      module in 8.5.
+
+      **To decide:** the Dockerfile is shared by every version, so the extension list
+      needs to vary by version. Options: a build arg listing extensions, dropping
+      opcache from the shared list and enabling it per version, or detecting at build
+      time whether the module was produced. Needs confirming against the PHP 8.5
+      changelog first — the diagnosis is empirical, not read from the release notes.
+
+      `php85dev` was **removed from `docker-compose.yml` and from the publish workflow**
+      so `docker compose up -d` keeps working. Re-add both when the build is fixed.
 
 - [x] **17. `aliases.bash` uses `docker-compose` (v1)** — FIXED
       Now uses `docker compose` (v2), matching the scripts. v1 is end-of-life and absent

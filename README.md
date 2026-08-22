@@ -144,6 +144,24 @@ forge:logs:php84
 - Use Xdebug for debugging (configure your IDE to listen on port **9003**, the Xdebug 3 default)
 - Access PHP containers via `forge:exec:php84` (or `forge:exec:php83` for PHP 8.3)
 
+## 🧩 Optional Services
+
+Some services are not started by default. They carry a compose `profile`, so you
+ask for them when you want them:
+
+```bash
+docker compose --profile search up -d      # Elasticsearch + Kibana
+```
+
+| Profile | Services | Notes |
+|---|---|---|
+| *(none)* | apachedev, php83dev, php84dev, dnsmasq, postgres16dev | started by `docker compose up -d` |
+| `search` | es8143dev, kibana | Kibana on `127.0.0.1:5601` |
+| `tools` | mkcert | used by `install_cert.sh`; not a long-running service |
+
+They are real service definitions rather than commented-out YAML, so
+`docker compose config` and CI keep checking them and they cannot quietly break.
+
 ## 🛠️ Supported PHP Extensions and Tools
 
 ### 📦 PHP Extensions
@@ -204,7 +222,7 @@ Plain PHP app → `plain-php--site.phpforge.dev`
 - **PHP version not switching**: Use the aliases `forge:use:php83` or `forge:use:php84` to change the default version, or append `--p83`/`--p84` to the URL.
 - **Aliases not working**: Ensure you sourced `aliases.bash` or added it to your `~/.bashrc`.
 
-For more help, check the logs with `docker-compose logs` or create an issue on GitHub.
+For more help, check the logs with `docker compose logs` or create an issue on GitHub.
 
 ## 🤝 Contributing
 

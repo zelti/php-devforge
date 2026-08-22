@@ -21,9 +21,12 @@ RUN echo "APT::Install-Recommends false;" >> /etc/apt/apt.conf.d/00recommends \
 # Copiar configuraciones y scripts
 
 RUN mkdir -p /etc/apache2/lua \
-    && mkdir -p /etc/apache2/ssl
+    && mkdir -p /etc/apache2/ssl \
+    && mkdir -p /etc/apache2/snippets
 
 COPY config_files/resolve_docroot.lua /etc/apache2/lua/resolve_docroot.lua
+#Shared vhost body
+COPY config_files/devlocal-common.conf /etc/apache2/snippets/devlocal-common.conf
 #Sites
 COPY config_files/devlocal.conf /etc/apache2/sites-available/devlocal.conf
 COPY config_files/devlocal_https.conf /etc/apache2/sites-available/devlocal_https.conf

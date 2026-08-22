@@ -455,10 +455,25 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       `depends_on` entries and the container names, and the short form already matches the
       URL convention (`--p84`).
 
-- [ ] **11. The two Apache vhosts are near-identical** — they differ only by the SSL
-      block. PHP version routing must currently be edited in both files.
-      → Move the shared body into an `Include`d snippet.
-      Files: `devlocal.conf`, `devlocal_https.conf`
+- [x] **11. The two Apache vhosts are near-identical** — FIXED
+      A diff showed they differed in exactly two things: the port, and the TLS block.
+      Everything else — 37 lines — was duplicated, so every routing change had to be
+      made twice and could silently drift.
+      → Shared body extracted to `/etc/apache2/snippets/devlocal-common.conf`, included
+      from both. 93 lines → 56, and `devlocal.conf` is now three lines.
+
+      Two things removed while extracting:
+      - `Define DEFAULT_DOCUMENT_ROOT`, replaced with the literal path. Defining the same
+        variable from two includes would warn, and the indirection bought nothing for a
+        value used once.
+      - The `<IfModule mod_lua.c>` / `<IfModule !mod_lua.c>` pair. It was already dead:
+        `LuaHookFixups` sits outside any guard (deliberately, task 20), so Apache cannot
+        start without mod_lua anyway. The snippet now says so explicitly instead of
+        pretending there is a fallback.
+
+      Verified on both vhosts: `configtest` passes, the port 80 vhost picks up
+      `ServerName` from the include, and HTTPS **and** plain HTTP serve the welcome page,
+      a hyphenated project, `--p83` version selection, and no source leak.
 
 - [ ] **12. The nginx variant is broken and unmaintained** — its Lua uses `[0-9]{2}`
       and `\\.`, which are not valid Lua patterns, and its `gsub("--", "/")` does not
@@ -466,27 +481,165 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       in compose, so nobody notices.
       → Either fix it to match Apache's behaviour, or delete it.
 
-- [ ] **13. Replace commented-out services with compose `profiles:`** — Elasticsearch,
-      Kibana and nginx are large blocks of commented YAML that silently rot.
-      `profiles: [search]` keeps them opt-in *and* parsed.
+- [x] **13. Replace commented-out services with compose `profiles:`** — DONE
+      Elasticsearch and Kibana were ~32 lines of commented YAML. Commented means invisible
+      to everything: `docker compose config` never reads it, CI never checks it, and it
+      rots unnoticed — which is precisely what happened to the nginx block.
+      → Both are now real services behind `profiles: ["search"]`. `docker compose up -d`
+      still starts exactly the same set; `docker compose --profile search up -d` adds them.
 
-- [ ] **14. `php-fpm.conf` is dead config** — the active PHP handler selection lives in
-      the two vhosts. The `<IfDefine php83>` blocks in this file are never used.
-      File: `docker-library/httpd/config_files/php-fpm.conf`
+      Fixed while uncommenting: Kibana's `SERVER_NAME` was `kibana.dev.local`, a domain
+      from an older naming scheme, now `kibana.${DEV_DOMAIN}`. Added the missing
+      `container_name`, `hostname` and `depends_on`, and restored the `dataes8143dev`
+      volume, which was commented out as well.
 
-- [ ] **15. No automated checks** — nothing catches any of the above. A small CI job
-      running `docker compose config`, `shellcheck`, `hadolint`, and a boot + `curl`
-      smoke test would have caught most of the bugs already found.
+      **CI now validates every profile** and asserts that none of them leak into the
+      default set — so an optional service can neither break silently nor start
+      unexpectedly.
 
-- [ ] **16. Consider publishing prebuilt images** to GHCR so users do not wait ~15
-      minutes on first run (compiles GD/intl/PECL, clones nvm, installs Node).
-      Note: this interacts with task 8 — see option B there.
+      **Not converted:** the commented nginx block in `docker-compose.yml`. That is task
+      12, which needs a decision first: fixing it or deleting it. Turning a broken service
+      into an easily-enabled profile would make it *more* likely to bite someone.
+
+      Left alone deliberately: `postgres16dev` still starts by default. Moving it behind a
+      profile would silently stop starting for people who rely on it — worth doing, but as
+      its own decision rather than smuggled into this one.
+
+- [x] **14. `php-fpm.conf` is dead config** — PARTLY. Deleting it would have broken
+      token authentication.
+      Only 11 of its 26 lines were dead: the `<IfDefine php83>` / `<IfDefine php84>`
+      blocks, which never fire because Apache starts with `-D FOREGROUND` and nothing
+      else. Those are gone. The rest is load-bearing:
+      - `SetEnvIfNoCase ^Authorization$ ... HTTP_AUTHORIZATION=$1` — Apache does **not**
+        forward the Authorization header to FastCGI on its own. Proven by removing the
+        line and rebuilding: `$_SERVER['HTTP_AUTHORIZATION']` went from
+        `Bearer mi-token-secreto` to absent. Without it every Bearer token, JWT and
+        Laravel Sanctum request arrives unauthenticated, with nothing else looking wrong.
+      - The `<FilesMatch "^\.ph...">` deny, which stops hidden files like `.php` being
+        served. Verified: returns 403.
+      Also modernised `Order Deny,Allow` / `Deny from all` to `Require all denied`
+      (the old syntax needs `mod_access_compat`), and dropped the `<IfModule !mod_php7.c>`
+      wrapper, meaningless in an fpm-based image.
+      **Both live behaviours are now covered by CI**, since either could regress silently.
+
+- [x] **15. No automated checks** — DONE (first pass)
+      `.github/workflows/ci.yml`. Free and unlimited: the repository is public.
+      Two jobs:
+      - **lint** — `shellcheck --severity=warning` over every script, `hadolint` over the
+        Dockerfile at `error` threshold. Running it locally first found a real bug in
+        `install.sh` (SC1087: `"$p["` parsed as an array expansion) plus SC2155 in the
+        `xdebug` helper; both fixed.
+      - **install** — on a clean Ubuntu runner: `./install.sh --yes --skip-dns`, build,
+        `up -d`, then assertions. `--skip-dns` leaves the runner's resolver alone;
+        `curl --resolve` is used instead. Certificates are **not** skipped, so real TLS
+        against the system trust store is exercised.
+
+      Each check maps to a bug this session uncovered, so they cannot come back quietly:
+
+      | Check | Guards against |
+      |---|---|
+      | welcome page over HTTPS | the stack not starting at all |
+      | hyphenated project name | `mi-app--sites` resolving to `sites/app/mi` |
+      | `--p83` suffix | version routing regressions |
+      | `.php` never returns `<?php` | the source-code leak (HTTPS **and** plain HTTP) |
+      | file written by PHP is owned by the host uid | the permission model breaking |
+
+      **The first run failed, and that was the point.** 403 on every page. The named
+      volume is shared; `useradd -m` creates the home directory mode 700, so the volume
+      was born 700 and Apache — a different uid — could not traverse it. The entrypoint
+      chmods it to 755, but it did so *after* a recursive chown of `/usr/local/nvm`
+      (tens of thousands of files), and Apache starts in parallel. Invisible locally,
+      because PUID there matches the image default so neither step runs. Fixed in the
+      image (home is 755 from the start), in the entrypoint (cheap fix first), and in
+      the workflow itself, which waited for "container running" — a state that says
+      nothing about readiness — instead of polling for a real response.
+
+      **DNS is covered too.** `setup-local-dns.sh` was the last untested piece and the
+      one with the widest blast radius: it edits the system resolver, so a bug there
+      breaks the user's machine, not just this project. The checks run *after* the
+      `--resolve` ones, so a failure points squarely at the DNS work:
+      it configures for real; the domain and an arbitrary subdomain resolve through the
+      system resolver; `github.com` and `debian.org` still resolve; **they still resolve
+      with dnsmasq stopped** (the `Domains=~.` regression, now guarded); pages are served
+      without `--resolve`, the path a browser actually takes; and `--remove` leaves DNS
+      working. Confirmed along the way that GitHub's Ubuntu runners do run
+      systemd-resolved, so the Linux branch is exercised end to end.
+
+      **Annotations are at zero.** The run was green while GitHub still painted six red
+      annotations from hadolint findings below the failure threshold — which trains you
+      to ignore the panel. Three were fixed (DL4006 pipefail, SC2046, DL3003); three are
+      ignored in `.hadolint.yaml`, each with its reason. `actions/checkout` moved to v5.
+      The diagnostics step now runs only on failure.
+
+      **Follow-ups:** builds take ~15 min with no layer cache — worth adding, or better,
+      pulling published images once task 16 exists. macOS is not covered: GitHub's macOS
+      runners have no Docker daemon, so the `/etc/resolver` branch and the PUID/PGID
+      behaviour there stay unverified.
+
+- [x] **16. Publish prebuilt images to GHCR** — DONE (pending first publish)
+      A fresh install compiled GD, intl and PECL, cloned nvm and installed Node: about
+      15 minutes. Images are now published to `ghcr.io/zelti/php-devforge/*`.
+      Chosen over Docker Hub after checking the docs: public packages on GHCR are free
+      with **no storage, bandwidth or pull limits**, and Actions supplies `GITHUB_TOKEN`
+      so there are no secrets to manage. Docker Hub throttles anonymous pulls to about
+      100 per 6 hours **per IP** — one shared office or CI address exhausts it for
+      everybody, with a `toomanyrequests` error that looks like the project is broken.
+      - `.github/workflows/publish.yml`, triggered on pushes to `main` that touch
+        `docker-library/**`, plus `workflow_dispatch`. Multi-arch: `linux/amd64` and
+        `linux/arm64`, so Apple Silicon pulls a native image instead of building.
+      - Every service keeps its `build:` section. Verified that compose **falls back to
+        building** when a pull is not possible, so a fresh clone still works before
+        anything has been published, and `docker compose build` still rebuilds locally.
+
+      **Not done yet:** the first publish. New GHCR packages are created **private**;
+      they must be switched to public once, by hand, in the package settings, or pulls
+      fail with a confusing error.
+
+      **Known wart:** the publish matrix lists each PHP version, so adding one means
+      editing compose *and* that workflow. Worth generating from compose later.
+
+- [x] **23. PHP 8.5 does not build** — FIXED
+      Adding the service was exactly what the refactoring promised: 13 lines in
+      `docker-compose.yml`, no new Dockerfile, no vhost change. The image itself fails.
+
+      `docker-php-ext-install` dies with `cp: cannot stat 'modules/*'`. Each extension
+      was tested individually against `php:8.5-fpm`, and **opcache is the only one that
+      fails** — gd, intl, zip, pdo_mysql, pdo_pgsql, soap, xsl, bcmath, mbstring, exif
+      and pcntl all build. It looks like opcache is no longer produced as a shared
+      module in 8.5.
+
+      **Confirmed against the official PHP 8.5 UPGRADING notes**, not just measured:
+      *"The Opcache extension is now always built into the PHP binary and is always
+      loaded"* and *"the build does not produce opcache.so ... anymore"*.
+
+      **Fix:** the Dockerfile asks the base image for its own version, so one file still
+      serves every version — duplicating it would have undone task 10:
+
+      ```dockerfile
+      && set -- gd intl zip pdo_mysql pdo_pgsql soap xsl bcmath mbstring exif pcntl \
+      && if [ "$(php -r 'echo PHP_VERSION_ID;')" -lt 80500 ]; then set -- "$@" opcache; fi \
+      && docker-php-ext-install -j"$(nproc)" "$@"
+      ```
+
+      `set --` rather than a string variable, so nothing depends on word splitting and
+      hadolint stays clean without a new exception. Verified that Docker strips a `#`
+      comment placed inside a line continuation, so the explanation can sit next to the
+      condition.
+
+      The changelog also warns that `zend_extension=opcache.so` now emits a warning —
+      something the empirical test would not have revealed. Checked: no `.ini` in this
+      project loads it that way.
+
+      Verified: 8.3.33, 8.4.24 and 8.5.9 all build, all report opcache loaded, and
+      `--p83` / `--p84` / `--p85` route correctly **with no configuration change** —
+      adding 8.5 was 13 lines in compose, exactly what tasks 10 and 20 were for.
+      CI now builds all three versions and asserts both the routing and opcache.
 
 - [x] **17. `aliases.bash` uses `docker-compose` (v1)** — FIXED
       Now uses `docker compose` (v2), matching the scripts. v1 is end-of-life and absent
       on many systems. Done as part of task 3, since it was the same small file.
-      **Still open elsewhere:** `README.md` also tells users to run `docker-compose up -d`
-      in the install steps — that should be updated too.
+      The last `docker-compose` mention in `README.md` is gone too, so the project is
+      fully on v2.
 
 - [ ] **18. Replace the aliases with a real `forge` command** 💬 DISCUSS FIRST
       Idea from the user: instead of shell aliases, ship a single executable so you can

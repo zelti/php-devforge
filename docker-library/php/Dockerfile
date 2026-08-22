@@ -13,6 +13,9 @@ ARG NODE_VERSION=24
 ARG PNPM_VERSION=latest
 ARG PHP_XDEBUG=no
 
+# Without this a failure on the left of a pipe is swallowed (hadolint DL4006).
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NVM_DIR=${NVM_DIR}
 ENV NODE_VERSION=${NODE_VERSION}
@@ -38,19 +41,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     vim nano less \
     cron apt-transport-https ca-certificates mailutils iputils-ping \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) \
-    gd \
-    intl \
-    zip \
-    pdo_mysql \
-    pdo_pgsql \
-    soap \
-    xsl \
-    bcmath \
-    opcache \
-    mbstring \
-    exif \
-    pcntl \
+    && set -- gd intl zip pdo_mysql pdo_pgsql soap xsl bcmath mbstring exif pcntl \
+    # From PHP 8.5 opcache is compiled into the binary and the build no longer
+    # produces opcache.so, so docker-php-ext-install fails on it. Detected from
+    # the base image rather than passed in, so one Dockerfile still serves every
+    # version.
+    && if [ "$(php -r 'echo PHP_VERSION_ID;')" -lt 80500 ]; then set -- "$@" opcache; fi \
+    && docker-php-ext-install -j"$(nproc)" "$@" \
     && rm -rf /var/lib/apt/lists/*
 
 # Extensiones PECL
@@ -63,7 +60,8 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # Dev user with its own group. 1000/1000 is the usual first user on Linux, so
 # most hosts need no adjustment; the entrypoint fixes it via PUID/PGID otherwise.
 RUN groupadd -g 1000 php-devforge \
-    && useradd -u 1000 -g php-devforge -c "php dev" -m -d /home/php-devforge -s /bin/bash php-devforge
+    && useradd -u 1000 -g php-devforge -c "php dev" -m -d /home/php-devforge -s /bin/bash php-devforge \
+    && chmod 755 /home/php-devforge
 
 RUN echo 'php-devforge ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/php-devforge \
     && chmod 440 /etc/sudoers.d/php-devforge
@@ -72,8 +70,7 @@ RUN echo 'php-devforge ALL=(ALL) NOPASSWD:SETENV: ALL' | EDITOR='tee -a' visudo 
 
 # Instalar NVM
 RUN git clone https://github.com/nvm-sh/nvm.git ${NVM_DIR} \
-    && cd ${NVM_DIR} \
-    && git checkout "$(git describe --abbrev=0 --tags --match "v[0-9]*" "$(git rev-list --tags --max-count=1)")" \
+    && git -C ${NVM_DIR} checkout "$(git -C ${NVM_DIR} describe --abbrev=0 --tags --match "v[0-9]*" "$(git -C ${NVM_DIR} rev-list --tags --max-count=1)")" \
     && chown -R php-devforge:www-data ${NVM_DIR} \
     && echo "export NVM_DIR=${NVM_DIR}" >> /etc/profile.d/nvm.sh \
     && echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /etc/profile.d/nvm.sh \

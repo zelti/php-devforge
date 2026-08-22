@@ -1,0 +1,68 @@
+name: Publish images
+
+# Only from main, so a branch cannot overwrite what people are pulling.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker-library/**"
+      - ".github/workflows/publish.yml"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: php
+            context: ./docker-library/php
+            args: PHP_TAG=8.3
+            tag: php:8.3-dev
+          - name: php
+            context: ./docker-library/php
+            args: PHP_TAG=8.4
+            tag: php:8.4-dev
+          - name: php
+            context: ./docker-library/php
+            args: PHP_TAG=8.5
+            tag: php:8.5-dev
+          - name: apache
+            context: ./docker-library/httpd
+            args: ""
+            tag: apache:dev
+          - name: mkcert
+            context: ./docker-library/mkcert
+            args: ""
+            tag: mkcert:dev
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # GITHUB_TOKEN is enough; no secrets to manage.
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          # arm64 covers Apple Silicon, which would otherwise build locally.
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.tag }}
+          build-args: ${{ matrix.args }}
+          cache-from: type=gha,scope=${{ matrix.tag }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.tag }}

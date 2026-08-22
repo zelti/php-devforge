@@ -19,13 +19,18 @@ x-phpconfig_default: &phpconfig_default
     - PGID=${PGID:-1000}
   logging: *json-logging
 
+# Images are published to ghcr.io. `docker compose up -d` pulls them, which turns
+# a ~15 minute first run into about one. Every service keeps its `build:` section:
+# compose falls back to building when a pull is not possible, and
+# `docker compose build` still rebuilds locally after editing a Dockerfile.
+
 services:
   # Generates the certificates. Not started by `up -d`; run it with:
   #   docker compose run --rm --user "$(id -u):$(id -g)" mkcert
   # The CA is kept in ./.caroot so it survives and stays trusted on the host.
   mkcert:
     build: ./docker-library/mkcert
-    image: php-devforge/mkcert:dev
+    image: ghcr.io/zelti/php-devforge/mkcert:dev
     profiles: ["tools"]
     volumes:
       - ./certificates:/certs
@@ -49,7 +54,7 @@ services:
 
   apachedev:
     build: ./docker-library/httpd
-    image: php-devforge/apache:dev
+    image: ghcr.io/zelti/php-devforge/apache:dev
     ports:
       - 80:80
       - 443:443
@@ -98,7 +103,7 @@ services:
   #     timeout: 10s
 
   php83dev:
-    image: php-devforge/php:8.3-dev
+    image: ghcr.io/zelti/php-devforge/php:8.3-dev
     container_name: php83dev
     hostname: ${USERNAME}-php83dev
     build:
@@ -109,7 +114,7 @@ services:
     <<: *phpconfig_default
 
   php84dev:
-    image: php-devforge/php:8.4-dev
+    image: ghcr.io/zelti/php-devforge/php:8.4-dev
     container_name: php84dev
     hostname: ${USERNAME}-php84dev
     build:
@@ -118,6 +123,20 @@ services:
         PHP_TAG: "8.4"
         NODE_VERSION: "${NODE_VERSION}"
     <<: *phpconfig_default
+
+  # Adding a version is this block and nothing else: one Dockerfile serves them
+  # all, and the vhosts pick the backend from the host name.
+  php85dev:
+    image: ghcr.io/zelti/php-devforge/php:8.5-dev
+    container_name: php85dev
+    hostname: ${USERNAME}-php85dev
+    build:
+      context: ./docker-library/php
+      args:
+        PHP_TAG: "8.5"
+        NODE_VERSION: "${NODE_VERSION}"
+    <<: *phpconfig_default
+
 
 volumes:
   dataphp-devforge:

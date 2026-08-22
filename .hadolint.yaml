@@ -1,0 +1,14 @@
+# Rules deliberately not applied. Everything else must pass.
+ignored:
+  # DL3008 - pin apt versions.
+  # Pinning Debian package versions makes the build fail as soon as the archive
+  # moves on, which for a dev image costs more than it protects.
+  - DL3008
+  # SC2016 - expressions do not expand in single quotes.
+  # Intentional: the nvm snippet is written literally into /etc/profile.d so the
+  # variable expands when a shell sources it, not while building.
+  - SC2016
+  # SC1091 - not following a sourced file.
+  # /etc/profile.d/nvm.sh is created earlier in the same build; the linter cannot
+  # see it.
+  - SC1091

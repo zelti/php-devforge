@@ -72,12 +72,12 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 info "docker compose v2 available"
 
-port_busy() { ss -lntu 2>/dev/null | grep -qE "[:.]$1[[:space:]]"; }
+port_busy() { ss -lntu 2>/dev/null | grep -qE "[:.]${1}[[:space:]]"; }
 
 for p in 80 443; do
     if port_busy "$p"; then
         warn "Port $p is in use. Apache will not start until it is free."
-        ss -lntup 2>/dev/null | grep -E "[:.]$p[[:space:]]" | head -1 | sed 's/^/      /'
+        ss -lntup 2>/dev/null | grep -E "[:.]${p}[[:space:]]" | head -1 | sed 's/^/      /'
     else
         info "Port $p is free"
     fi

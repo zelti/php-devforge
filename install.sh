@@ -16,7 +16,7 @@ err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 title() { echo -e "\n${BLUE}$1${NC}"; }
 
 ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0
-OPT_DOMAIN=""; OPT_DIR=""; OPT_PHP=""; OPT_DNS_PORT=""
+OPT_DOMAIN=""; OPT_DIR=""; OPT_PHP=""; OPT_DNS_PORT=""; OPT_IMAGES=""
 
 usage() {
     cat <<EOF
@@ -28,6 +28,7 @@ Usage: $0 [OPTIONS]
   --projects-dir=PATH   where your projects live (default: ~/php-devforge)
   --php=83|84           default PHP version (default: 84)
   --dns-port=N          port for the local DNS (default: first free one)
+  --images=pull|build   use the published images, or build your own (default: pull)
   --skip-cert           do not generate certificates
   --skip-dns            do not touch the system DNS
   -y, --yes             accept every default, ask nothing
@@ -43,6 +44,7 @@ for arg in "$@"; do
         --projects-dir=*) OPT_DIR="${arg#*=}" ;;
         --php=*)          OPT_PHP="${arg#*=}" ;;
         --dns-port=*)     OPT_DNS_PORT="${arg#*=}" ;;
+        --images=*)       OPT_IMAGES="${arg#*=}" ;;
         --skip-cert)      SKIP_CERT=1 ;;
         --skip-dns)       SKIP_DNS=1 ;;
         -y|--yes)         ASSUME_YES=1 ;;
@@ -90,6 +92,7 @@ DEF_DOMAIN="${DEV_DOMAIN:-phpforge.dev}"
 DEF_DIR="${PROJECTS_DIR:-$HOME/php-devforge}"
 DEF_PHP="${PHP_VERSION:-84}"
 DEF_DNS_PORT="${DNS_PORT:-}"
+case "${IMAGE_MODE:-missing}" in build) DEF_IMAGES="build" ;; *) DEF_IMAGES="pull" ;; esac
 
 ask() { # prompt, default -> answer on stdout
     local prompt="$1" default="$2" answer
@@ -108,13 +111,22 @@ confirm() { # prompt -> 0 yes / 1 no
 title "Settings"
 DOMAIN="${OPT_DOMAIN:-$(ask "Development domain?" "$DEF_DOMAIN")}"
 PROJ="${OPT_DIR:-$(ask "Where will your projects live?" "$DEF_DIR")}"
-PHPV="${OPT_PHP:-$(ask "Default PHP version (83 or 84)?" "$DEF_PHP")}"
+PHPV="${OPT_PHP:-$(ask "Default PHP version (83, 84 or 85)?" "$DEF_PHP")}"
+echo "  Images: 'pull' downloads prebuilt ones (about a minute)."
+echo "          'build' compiles them here (about 15 minutes the first time),"
+echo "          which is what you want if you plan to edit docker-library/."
+IMAGES="${OPT_IMAGES:-$(ask "Pull the images or build them?" "$DEF_IMAGES")}"
 
 # compose does not understand ~, so store an absolute path
 PROJ="${PROJ/#\~/$HOME}"
 case "$PROJ" in /*) ;; *) PROJ="$PWD/$PROJ" ;; esac
 
-case "$PHPV" in 83|84) ;; *) err "PHP version must be 83 or 84 (got: $PHPV)"; exit 1 ;; esac
+case "$PHPV" in 83|84|85) ;; *) err "PHP version must be 83, 84 or 85 (got: $PHPV)"; exit 1 ;; esac
+case "$IMAGES" in
+    pull)  IMAGE_MODE_V="missing" ;;
+    build) IMAGE_MODE_V="build" ;;
+    *) err "Images must be 'pull' or 'build' (got: $IMAGES)"; exit 1 ;;
+esac
 
 # ---------- free DNS port ----------
 if [ -n "$OPT_DNS_PORT" ]; then
@@ -149,6 +161,7 @@ sed -e "s|^DEV_DOMAIN=.*|DEV_DOMAIN=${DOMAIN}|" \
     -e "s|^DNS_PORT=.*|DNS_PORT=${DNSP}|" \
     -e "s|^PUID=.*|PUID=${PUID_V}|" \
     -e "s|^PGID=.*|PGID=${PGID_V}|" \
+    -e "s|^IMAGE_MODE=.*|IMAGE_MODE=${IMAGE_MODE_V}|" \
     .env.example > .env
 info ".env written"
 
@@ -188,6 +201,8 @@ fi
 
 title "Done"
 cat <<EOF
+  Images:        ${IMAGES} (change IMAGE_MODE in .env at any time)
+
   Start it:      docker compose up -d
   Shortcuts:     source $(pwd)/aliases.bash
   Test page:     https://welcome--sites.${DOMAIN}

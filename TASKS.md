@@ -673,6 +673,10 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       - Should the PHP versions be discovered from `docker-library/php/*/` instead of
         being hardcoded, so a new version needs no code change?
       - Plain bash script, or something else? (bash keeps it dependency-free)
+      - **Agreed already:** it should expose the image mode, e.g. `forge images build`
+        / `forge images pull`, so switching does not mean editing `.env` by hand. The
+        setting exists (`IMAGE_MODE`, honoured by `pull_policy` on every buildable
+        service) and the installer asks for it; only the command is missing.
 
 - [x] **20. PHP backend selection is now dynamic** — DONE
       The vhosts enumerated every PHP version (`SetEnvIf` per version + an `<If>` per

@@ -144,6 +144,29 @@ forge:logs:php84
 - Use Xdebug for debugging (configure your IDE to listen on port **9003**, the Xdebug 3 default)
 - Access PHP containers via `forge:exec:php84` (or `forge:exec:php83` for PHP 8.3)
 
+## 📦 Pull or Build the Images
+
+By default the environment uses prebuilt images from `ghcr.io`, so the first run
+takes about a minute instead of the ~15 it takes to compile PHP extensions, PECL
+and Node. The installer asks which you want, and you can change your mind at any
+time with one line in `.env`:
+
+```bash
+IMAGE_MODE=missing   # use the published images (default)
+IMAGE_MODE=build     # always build locally
+IMAGE_MODE=always    # re-pull every time, to force the newest published image
+```
+
+Then `docker compose up -d`.
+
+Pick `build` if you edit anything under `docker-library/`: your changes are picked
+up automatically, and Docker's layer cache makes it cheap when nothing changed.
+Either way `docker compose build` still builds on demand, and compose falls back
+to building if an image cannot be pulled.
+
+**Note:** settings baked in at build time — `NODE_VERSION`, for instance — only
+apply when you build. A pulled image already has them fixed.
+
 ## 🧩 Optional Services
 
 Some services are not started by default. They carry a compose `profile`, so you

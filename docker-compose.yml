@@ -11,9 +11,13 @@ x-phpconfig_default: &phpconfig_default
     - dataphp-devforge:/home/php-devforge
     - ${PROJECTS_DIR:-/home/php-devforge/public_html}:/home/php-devforge/public_html
     - ./.caroot:/caroot:ro
+    # Drop .ini files in here to change PHP settings. No rebuild needed, and it
+    # does not shadow the image's own conf.d, where the Xdebug toggle lives.
+    - ./custom/php.d:/usr/local/etc/php/custom.d:ro
   environment:
     - PHP_XDEBUG=${XDEBUG_ENABLE}
     - XDEBUG_IDKEY=${XDEBUG_IDKEY}
+    - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/usr/local/etc/php/custom.d
     # Files created in the container end up owned by this uid/gid on the host.
     - PUID=${PUID:-1000}
     - PGID=${PGID:-1000}

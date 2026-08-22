@@ -144,6 +144,58 @@ forge:logs:php84
 - Use Xdebug for debugging (configure your IDE to listen on port **9003**, the Xdebug 3 default)
 - Access PHP containers via `forge:exec:php84` (or `forge:exec:php83` for PHP 8.3)
 
+## ✏️ Customising Without Breaking Upgrades
+
+**Do not edit anything under `docker-library/`.** Those files change with every
+release, so your edits will conflict on `git pull` — and a copy kept aside is
+worse: it stops receiving fixes, silently. Use these instead. All three are
+ignored by git.
+
+**PHP settings — no rebuild.** Drop a file in `custom/php.d/`:
+
+```ini
+; custom/php.d/99-mine.ini
+memory_limit = 512M
+upload_max_filesize = 100M
+```
+
+```bash
+docker compose up -d --force-recreate php84dev
+```
+
+It is scanned *in addition to* the image's own config, so nothing is shadowed and
+the Xdebug toggle keeps working.
+
+**Your own services** — `docker-compose.local.yml`, loaded automatically:
+
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - 127.0.0.1:6379:6379
+```
+
+The same file overrides anything in the shipped compose files: ports, volumes,
+environment.
+
+**Extra PHP extensions or system packages** — extend the image instead of copying
+its Dockerfile, so you keep getting upstream fixes:
+
+```dockerfile
+# custom/php/Dockerfile
+FROM ghcr.io/zelti/php-devforge/php:8.4-dev
+RUN sudo pecl install mongodb && sudo docker-php-ext-enable mongodb
+```
+
+```yaml
+# docker-compose.local.yml
+services:
+  php84dev:
+    build:
+      context: ./custom/php
+```
+
 ## 📦 Pull or Build the Images
 
 By default the environment uses prebuilt images from `ghcr.io`, so the first run

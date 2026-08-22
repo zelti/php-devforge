@@ -725,3 +725,21 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       - Fallback: any missing string must fall back to English rather than print a
         variable name.
 
+- [x] **24. Customising without conflicting on upgrade** — DONE
+      Once people start editing `docker-library/` to add an extension or change a PHP
+      setting, `git pull` conflicts. The idea of copying the Dockerfiles to an
+      untracked directory was considered and rejected: it trades a loud problem for a
+      silent one. A copy made a month ago would still carry the source-code leak, the
+      volume permission race and the 8.5 opcache break, with nothing to signal it.
+
+      Three extension points instead, all gitignored, so `docker-library/` never needs
+      touching:
+      - `custom/php.d/*.ini` — mounted and added to `PHP_INI_SCAN_DIR` *alongside* the
+        image's own `conf.d`, not replacing it, so the Xdebug toggle keeps working.
+        **No rebuild.** Verified: `memory_limit` went 128M → 777M on a plain restart,
+        and `xdebug --force-activate` still loaded on port 9003 afterwards.
+      - `docker-compose.local.yml` — appended to `COMPOSE_FILE`, so it loads
+        automatically. Verified by adding a Redis service that answered `PONG`.
+        Compose **errors on a file listed but missing**, so the installer creates it.
+      - The `FROM ghcr.io/.../php:8.4-dev` pattern for extra extensions, documented in
+        the README: a few lines that keep inheriting upstream fixes.

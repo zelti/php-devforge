@@ -165,6 +165,38 @@ sed -e "s|^DEV_DOMAIN=.*|DEV_DOMAIN=${DOMAIN}|" \
     .env.example > .env
 info ".env written"
 
+# ---------- customisation points ----------
+# COMPOSE_FILE lists docker-compose.local.yml, and compose errors on a file that
+# is not there, so it has to exist even when empty.
+if [ ! -f docker-compose.local.yml ]; then
+    cat > docker-compose.local.yml <<'LOCALEOF'
+# Your own services and overrides. Ignored by git, so `git pull` never conflicts
+# with what you put here.
+#
+# services:
+#   redis:
+#     image: redis:7-alpine
+#     ports:
+#       - 127.0.0.1:6379:6379
+LOCALEOF
+    info "docker-compose.local.yml created (yours, ignored by git)"
+fi
+
+mkdir -p custom/php.d
+if [ ! -f custom/php.d/README.md ]; then
+    cat > custom/php.d/README.md <<'INIEOF'
+Any `.ini` file here is loaded by every PHP container. No rebuild needed: edit,
+then `docker compose up -d --force-recreate php84dev`.
+
+    ; custom/php.d/99-mine.ini
+    memory_limit = 512M
+    upload_max_filesize = 100M
+
+This is scanned in addition to the image's own conf.d, so it does not shadow
+anything -- the Xdebug toggle keeps working.
+INIEOF
+fi
+
 # ---------- projects folder ----------
 mkdir -p "$PROJ/projects" "$PROJ/sites"
 if [ ! -e "$PROJ/sites/welcome/index.php" ]; then
@@ -202,6 +234,10 @@ fi
 title "Done"
 cat <<EOF
   Images:        ${IMAGES} (change IMAGE_MODE in .env at any time)
+
+  Customise without ever editing docker-library/, so upgrades never conflict:
+    custom/php.d/*.ini          PHP settings, no rebuild
+    docker-compose.local.yml    your own services and overrides
 
   Start it:      docker compose up -d
   Shortcuts:     source $(pwd)/aliases.bash

@@ -5,3 +5,9 @@
 /.caroot
 
 /.env
+
+# Your own customisations. Kept out of git so `git pull` never conflicts.
+/docker-compose.local.yml
+/custom/php.d/*
+!/custom/php.d/.gitkeep
+/custom/*/Dockerfile

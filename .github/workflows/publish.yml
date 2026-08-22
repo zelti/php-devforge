@@ -42,6 +42,10 @@ jobs:
             context: ./docker-library/mkcert
             args: ""
             tag: mkcert:dev
+          - name: nginx
+            context: ./docker-library/nginx
+            args: ""
+            tag: nginx:dev
     steps:
       - uses: actions/checkout@v5
 

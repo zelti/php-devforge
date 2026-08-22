@@ -275,6 +275,33 @@ jobs:
           getent hosts github.com >/dev/null || { echo "DNS broken after removal"; exit 1; }
           echo "clean"
 
+      # nginx sat commented out and broken since the first commit precisely because
+      # nothing exercised it. It is an alternative to Apache, not an addition: both
+      # want ports 80 and 443.
+      - name: the nginx variant serves the same sites
+        run: |
+          docker compose build nginxdev
+          docker compose stop apachedev
+          docker compose --profile nginx up -d nginxdev
+          for i in $(seq 1 30); do
+            curl -fsS --max-time 5 -k --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
+              https://welcome--sites.phpforge.dev/ >/dev/null 2>&1 && break
+            sleep 1
+          done
+          get() { curl -fsS -k --resolve "$1.phpforge.dev:443:127.0.0.1" "https://$1.phpforge.dev/"; }
+          get my-app--sites          | grep -q "PHP 8.4"
+          get my-app--sites--p83     | grep -q "PHP 8.3"
+          get my-app--sites--p85     | grep -q "PHP 8.5"
+          # The Lua sets an unroutable backend when it cannot work out a version, so a
+          # .php fails closed instead of being served as a static file.
+          for h in my-app--sites my-app--sites--p99; do
+            body="$(curl -sk --resolve "$h.phpforge.dev:443:127.0.0.1" "https://$h.phpforge.dev/index.php" || true)"
+            printf '%s' "$body" | grep -q '<?php' && { echo "SOURCE LEAK on $h"; exit 1; }
+          done
+          echo "nginx ok"
+          docker compose stop nginxdev
+          docker compose up -d apachedev
+
       - name: container logs on failure
         if: failure()
         run: docker compose logs --tail=50

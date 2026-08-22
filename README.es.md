@@ -306,6 +306,24 @@ Los perfiles son cosa de compose, así que este sigue siendo un comando de
 | *(ninguno)* | apachedev, php83dev, php84dev, php85dev, dnsmasq, postgres16dev | los levanta `forge start` |
 | `search` | es8143dev, kibana | Kibana en `127.0.0.1:5601` |
 | `tools` | mkcert | lo usa `install_cert.sh`; no es un servicio permanente |
+| `nginx` | nginxdev | **sustituye** a apachedev; ver abajo |
+
+### nginx en vez de Apache
+
+Apache es el predeterminado porque soporta `.htaccess`, cosa que nginx no. Si
+prefieres nginx, está disponible — como alternativa, no como añadido, porque ambos
+quieren los puertos 80 y 443:
+
+```bash
+docker compose stop apachedev
+docker compose --profile nginx up -d nginxdev
+```
+
+Sirve las mismas URLs, incluidas las rutas anidadas y el sufijo `--pNN`.
+
+Es **OpenResty**, no nginx a secas: el docroot y el backend de PHP se derivan del
+nombre del host con Lua, y eso nginx normal no lo puede hacer. Cambiar la imagen base
+por `nginx:alpine` no funcionaría.
 
 Son definiciones reales, no YAML comentado, así que `docker compose config` y la CI las
 siguen validando y no pueden romperse en silencio.

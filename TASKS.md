@@ -475,11 +475,57 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       `ServerName` from the include, and HTTPS **and** plain HTTP serve the welcome page,
       a hyphenated project, `--p83` version selection, and no source leak.
 
-- [ ] **12. The nginx variant is broken and unmaintained** — its Lua uses `[0-9]{2}`
-      and `\\.`, which are not valid Lua patterns, and its `gsub("--", "/")` does not
-      reverse the path segments the way the Apache version does. It is commented out
-      in compose, so nobody notices.
-      → Either fix it to match Apache's behaviour, or delete it.
+- [x] **12. The nginx variant is broken and unmaintained** — FIXED
+      Decision: repair it. FrankenPHP stays a separate task.
+      It had **eight** defects, not one, and being commented out is exactly why none of
+      them surfaced:
+
+      | Where | Defect |
+      |---|---|
+      | Lua | `[0-9]{2}` — `{2}` is not a Lua quantifier |
+      | Lua | `\\.` — Lua escapes with `%.` |
+      | Lua | `%-p` matches one hyphen; the suffix is `--pNN` |
+      | Lua | the domain was unescaped, so `.` matched any character |
+      | Lua | `gsub("--", "/")` — `-` is a Lua quantifier; needs `%-%-` |
+      | Lua | **no reversal at all** — the core behaviour was missing |
+      | `site.conf.tpl` | `default "php${PHP_VERSION}"` lacked the `dev` suffix, pointing at a host that does not exist |
+      | `site.conf.tpl` | versions enumerated, so 8.5 was absent |
+
+      Rewritten to mirror the Apache resolver, which is tested. The backend is derived in
+      Lua too, so the enumerated `map` is gone and adding a version needs no change here.
+
+      **A phase-ordering bug appeared while testing**, worth remembering:
+      `set $backend "$php_backend:9000"` inside the location captured the placeholder,
+      because `set` runs in the rewrite phase *before* `rewrite_by_lua_file`. Using
+      `fastcgi_pass $php_backend:9000` directly defers it to the content phase.
+
+      Fails closed by design: the placeholder is an unroutable name, so if the Lua ever
+      fails to run a `.php` returns 502 instead of being served as a static file — the
+      way Apache once leaked source.
+
+      Now a real service behind `profiles: ["nginx"]`, **not commented out**, so
+      `docker compose config` and CI keep checking it. It replaces Apache rather than
+      joining it: both want ports 80 and 443.
+
+      Verified end to end: welcome page, nested paths (`v2--api--sites`), hyphenated
+      names (`laravel-app--sites`), `--p83`/`--p84`/`--p85`, no source leak including
+      `--p99`, hidden `.php` returns 403, and `Authorization` reaches PHP. CI builds it,
+      swaps Apache out, runs the same assertions, and swaps back.
+
+      **Naming:** called nginx, documented as OpenResty. It is a distribution of nginx so
+      the name is not wrong, and it is what people search for — but the docs say plainly
+      that stock nginx cannot do this, so nobody swaps the base image and wonders why it
+      breaks.
+
+- [ ] **28. FrankenPHP as an optional profile** — deferred, discussed
+      Considered while deciding what to do about nginx. It is not another web server but a
+      different execution model: PHP embedded in a Caddy-based server, with an optional
+      worker mode keeping the app in memory between requests.
+      **The catch is the one that made nginx get abandoned in the first place:** no
+      `.htaccess`. Caddy has no Lua either, so the host-to-path reversal would need regex
+      per depth.
+      Sensible as an opt-in `profiles: ["frankenphp"]` for worker-mode performance on
+      modern frameworks — never as the default.
 
 - [x] **13. Replace commented-out services with compose `profiles:`** — DONE
       Elasticsearch and Kibana were ~32 lines of commented YAML. Commented means invisible

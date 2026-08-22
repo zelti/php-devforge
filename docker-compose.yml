@@ -88,29 +88,43 @@ services:
       start_period: 10s
       timeout: 10s
 
-  # nginxdev:
-  #   build: ./docker-library/nginx
-  #   image: local/nginx:dev
-  #   container_name: nginx-dev
-  #   hostname: ${USERNAME}-nginx
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./certificates:/etc/nginx/ssl/:ro
-  #     - dataphp-devforge:/home/php-devforge:ro
-  #   environment:
-  #     - DEV_DOMAIN=${DEV_DOMAIN}
-  #     - PHP_VERSION=${PHP_VERSION}
-  #   depends_on:
-  #     - php${PHP_VERSION}dev
-  #   logging: *json-logging
-  #   healthcheck:
-  #     test: curl --fail http://localhost || exit 1
-  #     interval: 30s
-  #     retries: 5
-  #     start_period: 10s
-  #     timeout: 10s
+  # nginx, via OpenResty. Apache is the default; this is an alternative, not an
+  # addition -- both want ports 80 and 443, so stop one before starting the other:
+  #
+  #   docker compose stop apachedev
+  #   docker compose --profile nginx up -d nginxdev
+  #
+  # OpenResty rather than plain nginx: the document root and the PHP backend come
+  # from the host name in Lua, which stock nginx cannot do.
+  #
+  # No .htaccess here. That is the reason Apache is the default.
+  nginxdev:
+    profiles: ["nginx"]
+    build: ./docker-library/nginx
+    image: ghcr.io/zelti/php-devforge/nginx:dev
+    pull_policy: ${IMAGE_MODE:-missing}
+    container_name: nginxdev
+    hostname: ${USERNAME}-nginxdev
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - dataphp-devforge:/home/php-devforge:ro
+      - ./certificates:/etc/nginx/ssl/:ro
+      - ${PROJECTS_DIR:-/home/php-devforge/public_html}:/home/php-devforge/public_html
+    environment:
+      - DEV_DOMAIN=${DEV_DOMAIN}
+      - PHP_VERSION=${PHP_VERSION}
+    depends_on:
+      - php${PHP_VERSION}dev
+      - dnsmasq
+    logging: *json-logging
+    healthcheck:
+      test: curl --fail http://localhost || exit 1
+      interval: 30s
+      retries: 5
+      start_period: 10s
+      timeout: 10s
 
   php83dev:
     image: ghcr.io/zelti/php-devforge/php:8.3-dev

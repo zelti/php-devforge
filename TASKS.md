@@ -785,3 +785,29 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       New README sections for local DNS and troubleshooting entries for the things that
       look like bugs but are not: the pnpm nudge, and a `custom/php.d` ini needing
       `--force-recreate` rather than a plain restart.
+
+- [x] **27. README redesign, and a Spanish one** — DONE
+      The README opened with a paragraph of description and buried the one thing that
+      makes the project different. It now leads with the folder-to-URL mapping, shown
+      rather than explained, then per-request PHP versions, then a comparison table.
+
+      **A claim was checked before publishing it.** The requested line — *"unlike tools
+      built around per-project configuration, PHP DevForge derives domains straight from
+      your folder structure"* — is accurate against DDEV, which needs `ddev config` in
+      every project. It is **not** accurate against Laravel Herd: its documentation says
+      *"You can access every site in a parked path via `<directory-name>.test`"*, so Herd
+      derives domains from folders too. Publishing it unqualified would have looked
+      uninformed to exactly the audience being addressed.
+
+      The line stayed, and the comparison table carries what is actually unique:
+      nested paths at any depth (`v2--api--sites`, where Herd does one level), the PHP
+      version chosen per request from the URL, and Linux support. The table also says
+      plainly what the others do better, which is more persuasive than pretending
+      otherwise.
+
+      `README.es.md` added, written as its own document rather than a literal
+      translation, with language switcher links in both. Verified: no broken internal
+      anchors, every external link resolves.
+
+      **Note for task 22 (i18n):** this is documentation only. The scripts still speak
+      English.

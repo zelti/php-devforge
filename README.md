@@ -4,21 +4,83 @@
 
 # PHP DevForge
 
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE) [![GitHub last commit](https://img.shields.io/github/last-commit/zelti/php-devforge)]()
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![CI](https://github.com/zelti/php-devforge/actions/workflows/ci.yml/badge.svg)](https://github.com/zelti/php-devforge/actions/workflows/ci.yml)
+![PHP](https://img.shields.io/badge/PHP-8.3%20%7C%208.4%20%7C%208.5-777BB4)
+[![GitHub last commit](https://img.shields.io/github/last-commit/zelti/php-devforge)]()
 
-A ready-to-use PHP development environment powered by Docker containers that provides automatic domain generation, local SSL certificates, and live code editing capabilities.
+**English** · [Español](README.es.md)
 
-## 📖 Description
+A local PHP environment where **the folder structure is the configuration**.
 
-PHP DevForge is a comprehensive Docker-based development environment designed to streamline PHP development. It features:
+> Unlike tools built around per-project configuration, PHP DevForge derives domains
+> straight from your folder structure. No config files, no init commands: create the
+> folder and the site exists.
 
-- **Automatic Domain Generation**: Create local domains without manual configuration
-- **Local SSL Certificates**: Auto-generated certificates with mkcert for secure HTTPS development
-- **PHP 8.3, 8.4 and 8.5**: switch per request from the URL, or set a default
-- **Live Code Editing**: Shared volumes allow real-time code changes
-- **Multi-Container Setup**: Apache, PHP-FPM, DNS, and optional database services
+---
 
-The environment automatically generates URLs based on your project folder structure. For example, a project at `laravel/site/public/index.php` becomes accessible at `https://public--site--laravel.phpforge.dev`.
+## ⚡ How it works
+
+```
+~/php-devforge/sites/
+├── my-app        →  https://my-app--sites.phpforge.dev
+├── shop          →  https://shop--sites.phpforge.dev
+└── api/v2        →  https://v2--api--sites.phpforge.dev
+```
+
+The host name is the path, reversed and joined with `--`. Nothing to register,
+nothing to restart. Add a folder, reload the browser.
+
+**Any PHP version, per request:**
+
+```
+https://my-app--sites.phpforge.dev          # your default
+https://my-app--sites--p83.phpforge.dev     # this request on PHP 8.3
+https://my-app--sites--p85.phpforge.dev     # this request on PHP 8.5
+```
+
+Same code, three PHP versions, no restart and no switching. Useful for checking an
+upgrade before committing to it.
+
+Everything is served over **real HTTPS** with a locally trusted certificate.
+
+## 🧭 How it compares
+
+|  | PHP DevForge | [Herd](https://herd.laravel.com) | [DDEV](https://ddev.com) |
+|---|---|---|---|
+| Domain from folder name | ✅ | ✅ | ❌ per-project config |
+| **Nested paths** (`v2--api--sites`) | ✅ any depth | ❌ one level | ❌ |
+| **PHP version per request** (`--p85`) | ✅ from the URL | ❌ per site | ❌ per project |
+| Linux | ✅ | ❌ macOS/Windows | ✅ |
+| Runs in Docker | ✅ | ❌ native | ✅ |
+| Local HTTPS | ✅ | ✅ | ✅ |
+| `.htaccess` | ✅ Apache | ✅ | ✅ |
+
+DDEV gives you a per-project, reproducible definition — better when each project
+needs a different stack. Herd is the fastest native option on macOS. PHP DevForge is
+for keeping many projects on one shared environment with no per-project setup.
+
+## 📖 What you get
+
+- **Apache + PHP-FPM 8.3, 8.4 and 8.5**, all running, chosen per request
+- **Automatic HTTPS** with a locally trusted CA
+- **Wildcard local DNS** that only touches your dev domain
+- **Live editing** — files are mounted, nothing to sync
+- **Files stay yours** — containers adopt your user id, so no `sudo` and no
+  unremovable `node_modules`
+- **Xdebug** on a toggle, **Composer**, **Node 24**, **pnpm**
+- Optional **PostgreSQL**, **Elasticsearch** and **Kibana**
+
+## 🚀 Quick start
+
+```bash
+git clone https://github.com/zelti/php-devforge.git
+cd php-devforge
+./install.sh            # asks a few questions, sets everything up
+docker compose up -d
+```
+
+Then open **https://welcome--sites.phpforge.dev**.
 
 ## 🔧 Installation
 

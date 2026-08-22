@@ -204,7 +204,7 @@ Plain PHP app → `plain-php--site.phpforge.dev`
 - **PHP version not switching**: Use the aliases `forge:use:php83` or `forge:use:php84` to change the default version, or append `--p83`/`--p84` to the URL.
 - **Aliases not working**: Ensure you sourced `aliases.bash` or added it to your `~/.bashrc`.
 
-For more help, check the logs with `docker-compose logs` or create an issue on GitHub.
+For more help, check the logs with `docker compose logs` or create an issue on GitHub.
 
 ## 🤝 Contributing
 

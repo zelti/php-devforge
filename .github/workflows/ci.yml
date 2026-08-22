@@ -148,6 +148,29 @@ jobs:
           test "$owner" = "$(id -u)" || { echo "owned by $owner, expected $(id -u)"; exit 1; }
           rm -f "$DIR/projects/my-app/public/written.txt"
 
+      # Apache does not forward the Authorization header to FastCGI by itself;
+      # php-fpm.conf adds it back. Removing that line breaks every Bearer token
+      # and JWT silently, with nothing else looking wrong.
+      - name: the Authorization header reaches PHP
+        run: |
+          DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+          printf '<?php echo $_SERVER["HTTP_AUTHORIZATION"] ?? "MISSING";' \
+            > "$DIR/sites/welcome/auth.php"
+          got="$(curl -fsS -H 'Authorization: Bearer ci-token' \
+            --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
+            https://welcome--sites.phpforge.dev/auth.php)"
+          test "$got" = "Bearer ci-token" || { echo "got '$got'"; exit 1; }
+
+      - name: hidden .php files are not served
+        run: |
+          DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+          printf '<?php echo "should not be reachable";' > "$DIR/sites/welcome/.php"
+          code="$(curl -sk -o /dev/null -w '%{http_code}' \
+            --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
+            https://welcome--sites.phpforge.dev/.php)"
+          rm -f "$DIR/sites/welcome/.php"
+          test "$code" = "403" || { echo "expected 403, got $code"; exit 1; }
+
       # Everything above proves the stack works, using curl --resolve. From here
       # the system resolver is configured for real, so a failure below points at
       # setup-local-dns.sh and nothing else.

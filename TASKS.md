@@ -485,9 +485,22 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
       Kibana and nginx are large blocks of commented YAML that silently rot.
       `profiles: [search]` keeps them opt-in *and* parsed.
 
-- [ ] **14. `php-fpm.conf` is dead config** — the active PHP handler selection lives in
-      the two vhosts. The `<IfDefine php83>` blocks in this file are never used.
-      File: `docker-library/httpd/config_files/php-fpm.conf`
+- [x] **14. `php-fpm.conf` is dead config** — PARTLY. Deleting it would have broken
+      token authentication.
+      Only 11 of its 26 lines were dead: the `<IfDefine php83>` / `<IfDefine php84>`
+      blocks, which never fire because Apache starts with `-D FOREGROUND` and nothing
+      else. Those are gone. The rest is load-bearing:
+      - `SetEnvIfNoCase ^Authorization$ ... HTTP_AUTHORIZATION=$1` — Apache does **not**
+        forward the Authorization header to FastCGI on its own. Proven by removing the
+        line and rebuilding: `$_SERVER['HTTP_AUTHORIZATION']` went from
+        `Bearer mi-token-secreto` to absent. Without it every Bearer token, JWT and
+        Laravel Sanctum request arrives unauthenticated, with nothing else looking wrong.
+      - The `<FilesMatch "^\.ph...">` deny, which stops hidden files like `.php` being
+        served. Verified: returns 403.
+      Also modernised `Order Deny,Allow` / `Deny from all` to `Require all denied`
+      (the old syntax needs `mod_access_compat`), and dropped the `<IfModule !mod_php7.c>`
+      wrapper, meaningless in an fpm-based image.
+      **Both live behaviours are now covered by CI**, since either could regress silently.
 
 - [x] **15. No automated checks** — DONE (first pass)
       `.github/workflows/ci.yml`. Free and unlimited: the repository is public.
@@ -550,8 +563,8 @@ own there, so PUID/PGID should be harmless, but it is unverified — see task 15
 - [x] **17. `aliases.bash` uses `docker-compose` (v1)** — FIXED
       Now uses `docker compose` (v2), matching the scripts. v1 is end-of-life and absent
       on many systems. Done as part of task 3, since it was the same small file.
-      **Still open elsewhere:** `README.md` also tells users to run `docker-compose up -d`
-      in the install steps — that should be updated too.
+      The last `docker-compose` mention in `README.md` is gone too, so the project is
+      fully on v2.
 
 - [ ] **18. Replace the aliases with a real `forge` command** 💬 DISCUSS FIRST
       Idea from the user: instead of shell aliases, ship a single executable so you can

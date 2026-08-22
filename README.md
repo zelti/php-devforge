@@ -413,53 +413,15 @@ They are real service definitions rather than commented-out YAML, so
 
 ## 🛠️ Supported PHP Extensions and Tools
 
-### 📦 PHP Extensions
-- **Core Extensions**: GD, Intl, Zip, PDO MySQL, PDO PostgreSQL, SOAP, XSL, BC Math, OPcache, Mbstring, Exif, PCNTL
-- **PECL Extensions**: Imagick, Redis, APCu, Xdebug
+**PHP extensions:** GD, Intl, Zip, PDO MySQL, PDO PostgreSQL, SOAP, XSL, BC Math,
+OPcache, Mbstring, Exif, PCNTL, Imagick, Redis, APCu, Xdebug
 
-### 🔨 Development Tools
-- **Composer**: PHP dependency manager (pre-installed)
-- **Node.js 24 LTS**: via NVM. The version is `NODE_VERSION` in `.env` (only applies when you build your own images)
-- **pnpm**: installed alongside npm and preferred; typing `npm` points you at it
-- **Git**: Version control
-- **Xdebug**: PHP debugging extension
-- **Cron**: Task scheduling support
+**Tools:** Composer, Node.js 24 LTS via NVM, pnpm, Git, Cron
 
-### 🐳 Container Features
-- **User Setup**: devuser with sudo privileges
-- **Volume Sharing**: Live code editing
-- **FPM Configuration**: Optimized for development
-- **Error Display**: PHP errors shown in development mode
-
-## 📁 Recommended Project Organization
-
-Create a dedicated folder inside public_html that will contain a symbolic link for each project.
-Each symbolic link should point to the project’s public folder (where index.php is located).
-
-```
-~/sites/
-├── laravel-app   → symbolic link to Laravel’s /public folder
-├── symfony-app   → symbolic link to Symfony’s /public folder
-└── plain-php     → symbolic link to the folder containing 
-```
-
-This setup keeps your project URLs clean. For example:
-
-Laravel app → `laravel-app--site.phpforge.dev`
-
-Symfony app → `symfony-app--site.phpforge.dev`
-
-Plain PHP app → `plain-php--site.phpforge.dev`
-
-### Example: Creating a symbolic link
-#### Example for a Laravel project
-`ln -s /public_html/projects/laravel-app/public ~/sites/laravel-app`
-
-#### Example for a Symfony project
-`ln -s /public_html/projects/symfony-app/public ~/sites/symfony-app`
-
-#### Example for a plain PHP project
-`ln -s /public_html/projects/plain-php ~/sites/plain-php`
+`NODE_VERSION` in `.env` sets the Node version, and applies when you build your own
+images — a pulled image already has it fixed. `npm` still works but points you at
+pnpm. Xdebug is off until you turn it on with the `xdebug` command inside a
+container; your IDE should listen on port **9003**.
 
 ## 🐛 Troubleshooting
 
@@ -478,53 +440,17 @@ For more help, check the logs with `docker compose logs` or create an issue on G
 
 ## 🤝 Contributing
 
-We welcome contributions to improve PHP DevForge! Please follow these guidelines:
+1. Fork the repository and create a branch
+2. Make your changes
+3. Check that CI passes — it installs and runs the whole thing on a clean machine,
+   so it catches a fair amount
+4. Open a pull request describing what changes and why
 
-### ⚙️ Development Setup
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Make your changes
-4. Test thoroughly with different PHP versions and configurations
-5. Update documentation if needed
-
-### 📏 Code Standards
-- Follow Docker best practices
-- Use clear, descriptive commit messages
-- Test configurations on multiple platforms (Linux, macOS)
-- Ensure backward compatibility
-
-### 🧪 Testing
-- Test SSL certificate generation
-- Verify DNS resolution works
-- Check PHP version switching
-- Validate volume mounting and live editing
-- Test with different project structures
-
-### 📚 Documentation
-- Update README for new features
-- Document configuration options
-- Provide examples for common use cases
-- Keep installation instructions current
-
-### 📤 Submitting Changes
-1. Ensure all tests pass
-2. Update CHANGELOG.md if applicable
-3. Submit a pull request with detailed description
-4. Address review feedback promptly
-
-### 🐛 Reporting Issues
-- Use GitHub issues for bug reports
-- Include your OS, Docker version, and PHP version
-- Provide steps to reproduce
-- Attach relevant logs and configuration files
+CI builds all three PHP versions, runs the installer, configures DNS, checks that a
+`.php` is never served as source, that files created in the containers belong to
+you, and that both Apache and nginx serve the same sites. If it is green, it works
+somewhere other than your laptop.
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 💬 Support
-
-For questions or issues:
-- Check the troubleshooting section in documentation
-- Search existing GitHub issues
-- Create a new issue with detailed information

@@ -1062,7 +1062,7 @@ what the README explains first.
       code. The typed path itself needs a tty and stays uncovered until task 33
       replaces the prompts.
 
-- [ ] **33. Free-text prompts where a selectable list belongs**
+- [x] **33. Free-text prompts where a selectable list belongs** — FIXED
       Two questions expect typed input for a closed set of options:
 
       - **Images**: `Pull the images or build them? [pull]:` — the paragraph above it
@@ -1074,9 +1074,37 @@ what the README explains first.
       the explanation attaches to the option instead of sitting in a wall of text
       above the prompt.
 
-      Keep typed input working for `--profiles` and friends, so scripted and CI
-      installs do not need a TTY. If there is no terminal, fall back to the current
-      prompts.
+      Three prompts became arrow-key menus, in a new `lib/menu.sh`: PHP version,
+      images, and one list holding the databases and mail together. The PHP version
+      was not in the report but is the same shape of question, and converting it
+      retired the hardcoded `case "$PHPV" in 83|84|85)` — the valid set is now
+      whatever the compose file defines, the rule `bin/forge` already followed.
+
+      **The option text is read from the compose files, not written by hand.** One
+      query for the base images, one per profile; the difference is what that profile
+      adds:
+
+      ```
+      pg18        postgres:18
+      mariadb11   mariadb:11.8        <- the profile name does not tell you the .8
+      mail        axllent/mailpit:latest  ->  mail.phpforge.dev
+      ```
+
+      Adding postgres 19 makes it appear with no other change. The typed fallback
+      keeps its grouped `PostgreSQL / MariaDB` labels, which is the one place those
+      words are still spelled out.
+
+      Written for bash 3.2, since macOS ships it: no associative arrays, no
+      `mapfile`, integer `read` timeouts only. Falls back to the typed prompts when
+      there is no `/dev/tty`, when `TERM` is `dumb`, or with `NO_MENU=1` — the path
+      `--yes` and CI already use.
+
+      **This also closes the hole task 32 documented.** CI drives a real pty with
+      `python3 -m pty` (already on the runner, unlike `expect`): arrow and digit
+      keys, space to toggle, enter to confirm, asserting the resulting `.env`. The
+      driver locates each option by reading the drawn menu rather than counting
+      keypresses, so adding a database cannot silently break it — the first version
+      did count, and would have.
 
 - [ ] **34. The installer's last words send you to `docker compose`, not `forge`**
       It ends with:
@@ -1088,6 +1116,10 @@ what the README explains first.
 
       So the first command anyone learns is the one `forge` exists to replace, and
       `forge help` never gets discovered. It should say `forge start`.
+
+      Located while doing task 33: it is `install_cert.sh:144`, not `install.sh` —
+      that one already ends with `forge start`. The installer calls the certificate
+      script last, so its closing line is what you actually read.
 
 - [ ] **35. The README teaches `docker compose` in 11 places**
       Same problem, wider. `README.md` lines 133, 269, 318, 322, 368, 401, 433, 436,

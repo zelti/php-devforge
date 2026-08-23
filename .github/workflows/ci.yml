@@ -59,6 +59,38 @@ jobs:
           done
           echo "optional services stay optional"
 
+      # The installer used to offer databases it could not name: the list came from
+      # `docker compose config --profiles`, which cannot parse the files before .env
+      # exists. The same command validated the answer, so a correct name was dropped
+      # too. Runs before the real install, in the no-.env state the bug needed.
+      - name: the installer can name the databases it offers
+        run: |
+          set -euo pipefail
+          test ! -f .env
+
+          # The regression test. An empty list is what broke both halves: nothing
+          # to read, and nothing to validate against. --yes answers `none`, so the
+          # typed path itself needs a tty and stays uncovered until task 33
+          # reworks the prompts.
+          ./install.sh --yes --skip-dns --skip-cert --skip-link | tee /tmp/install.log
+          grep -q 'pg18' /tmp/install.log
+          grep -q 'mariadb12' /tmp/install.log
+          rm -f .env
+
+          # Guards the new validation against becoming too strict. It does not
+          # reproduce the bug: --profiles bypassed validation entirely, so this
+          # passed even while every typed name was being rejected.
+          ./install.sh --yes --skip-dns --skip-cert --skip-link --profiles=pg18,mail >/dev/null
+          grep -q '^COMPOSE_PROFILES=pg18,mail$' .env
+          rm -f .env .env.backup
+
+          # a name that does not must stop a scripted install, not write a dead profile
+          if ./install.sh --yes --skip-dns --skip-cert --skip-link --profiles=nope >/dev/null 2>&1; then
+            echo "unknown profile was accepted"; exit 1
+          fi
+          test ! -f .env
+          echo "the offered list is real and answerable"
+
       # --skip-dns: the runner's resolver is left alone; curl --resolve is used
       # instead. Certificates are not skipped, so real TLS is exercised.
       - name: run the installer

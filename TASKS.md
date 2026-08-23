@@ -1014,7 +1014,7 @@ build cache, no `.env`, no CA. The stack came up and worked. Everything below is
 about the parts around it: what the installer asks, what it says at the end, and
 what the README explains first.
 
-- [ ] **32. The installer asks for the database names but never shows them** — BUG
+- [x] **32. The installer asks for the database names but never shows them** — FIXED
       The prompt prints an empty list, so you have to guess:
 
       ```
@@ -1035,10 +1035,32 @@ what the README explains first.
       The `2>/dev/null` hides the failure, so it degrades to a silent empty list
       rather than an error.
 
-      Fix: get the profile list without depending on `.env` — write the temporary
-      values to a scratch file and pass `--env-file`, or read `profiles:` out of
-      `docker-compose.override.yml`. Same shape of bug as tasks 12 and 24: a command
-      that can fail, with its failure swallowed.
+      **Worse than reported.** The same command validated the answer, so with an
+      empty list every name failed `grep -qx`. Typing the correct name did not help:
+
+      ```
+      'pg18'      -> [!] Unknown database, skipped
+      'mariadb12' -> [!] Unknown database, skipped
+      'basura'    -> [!] Unknown database, skipped
+      ```
+
+      The question could not be answered correctly by anyone.
+
+      Fixed by reading the list through an env file that already has values —
+      a real `.env` on re-runs, `.env.example` otherwise — and stopping the install
+      when that fails instead of offering nothing. Two more things surfaced on the
+      way:
+
+      - `--profiles` was never validated at all, so `--profiles=nope` wrote a dead
+        profile into `.env`. Now a hard error: nobody is watching a scripted install.
+      - The typed answer stripped commas *inside* each word (`d="${d//,/}"`), so
+        `pg16,pg17` became `pg16pg17` and was rejected. Now split on commas.
+
+      CI ran `./install.sh --yes`, where the answer defaults to `none` and the
+      validation loop never executes — which is why it shipped. The new step asserts
+      the printed list actually contains `pg18` and `mariadb12`, and fails on the old
+      code. The typed path itself needs a tty and stays uncovered until task 33
+      replaces the prompts.
 
 - [ ] **33. Free-text prompts where a selectable list belongs**
       Two questions expect typed input for a closed set of options:

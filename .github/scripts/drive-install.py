@@ -88,6 +88,14 @@ def main():
                 break
             buf += chunk
             out += chunk
+        # A plain "[default]: " prompt is answered the way a person accepting
+        # defaults does. Without this the run stalls on the first typed question
+        # and every menu marker times out, which says nothing about the menus.
+        if buf.rstrip(b" ").endswith(b"]:"):
+            os.write(fd, ENTER)
+            buf = b""
+            continue
+
         if step < len(STEPS):
             marker, want = STEPS[step]
             if marker.encode() in buf:

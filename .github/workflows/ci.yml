@@ -37,28 +37,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: compose file parses
-        run: |
-          cp .env.example .env
-          docker compose config >/dev/null
-          # Optional services live behind profiles instead of being commented
-          # out, so they stay parsed and cannot rot unnoticed the way the old
-          # nginx block did.
-          docker compose --profile search --profile tools config >/dev/null
-          echo "default services:"
-          docker compose config --services
-          echo "with every profile:"
-          docker compose --profile search --profile tools config --services
-
-      - name: profiles do not leak into the default set
-        run: |
-          for s in es8143dev kibana mkcert; do
-            if docker compose config --services | grep -qx "$s"; then
-              echo "$s starts by default and should not"; exit 1
-            fi
-          done
-          echo "optional services stay optional"
-
       # The installer used to offer databases it could not name: the list came from
       # `docker compose config --profiles`, which cannot parse the files before .env
       # exists. The same command validated the answer, so a correct name was dropped
@@ -66,7 +44,11 @@ jobs:
       - name: the installer can name the databases it offers
         run: |
           set -euo pipefail
-          test ! -f .env
+          # Must run before 'compose file parses' does cp .env.example .env:
+          # the bug needs the fresh-clone state, with no .env at all.
+          if [ -f .env ]; then
+            echo "this step has to run before anything creates .env"; exit 1
+          fi
 
           # The regression test. An empty list is what broke both halves: nothing
           # to read, and nothing to validate against. --yes answers `none`, so the
@@ -90,6 +72,28 @@ jobs:
           fi
           test ! -f .env
           echo "the offered list is real and answerable"
+
+      - name: compose file parses
+        run: |
+          cp .env.example .env
+          docker compose config >/dev/null
+          # Optional services live behind profiles instead of being commented
+          # out, so they stay parsed and cannot rot unnoticed the way the old
+          # nginx block did.
+          docker compose --profile search --profile tools config >/dev/null
+          echo "default services:"
+          docker compose config --services
+          echo "with every profile:"
+          docker compose --profile search --profile tools config --services
+
+      - name: profiles do not leak into the default set
+        run: |
+          for s in es8143dev kibana mkcert; do
+            if docker compose config --services | grep -qx "$s"; then
+              echo "$s starts by default and should not"; exit 1
+            fi
+          done
+          echo "optional services stay optional"
 
       # --skip-dns: the runner's resolver is left alone; curl --resolve is used
       # instead. Certificates are not skipped, so real TLS is exercised.

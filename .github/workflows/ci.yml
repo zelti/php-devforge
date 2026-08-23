@@ -19,10 +19,13 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck --severity=warning \
-            install.sh install_cert.sh setup-local-dns.sh aliases.bash \
+            install.sh install_cert.sh setup-local-dns.sh aliases.bash lib/menu.sh \
             docker-library/php/config_files/docker-php-entrypoint \
             docker-library/php/config_files/xdebug \
             docker-library/httpd/config_files/docker-entrypoint.sh
+
+      - name: the pty driver compiles
+        run: python3 -m py_compile .github/scripts/drive-install.py
 
       - name: hadolint
         uses: hadolint/hadolint-action@v3.1.0
@@ -72,6 +75,22 @@ jobs:
           fi
           test ! -f .env
           echo "the offered list is real and answerable"
+
+      # Task 32 shipped a broken prompt because CI only ever ran --yes, where the
+      # questions are never asked. This presses the keys a person presses: a pty,
+      # arrow/digit keys, space to toggle. The driver finds each option by reading
+      # the drawn menu, so adding a database cannot quietly break it.
+      - name: the menus answer real keystrokes
+        run: |
+          set -euo pipefail
+          rm -f .env .env.backup
+          python3 .github/scripts/drive-install.py \
+            ./install.sh --skip-cert --skip-dns --skip-link --domain=phpforge.dev
+          grep -q '^PHP_VERSION=85$' .env          # moved off the default 8.4
+          grep -q '^IMAGE_MODE=missing$' .env      # kept 'pull'
+          grep -q '^COMPOSE_PROFILES=pg18,mail$' .env
+          rm -f .env .env.backup
+          echo "the menus work end to end"
 
       - name: compose file parses
         run: |

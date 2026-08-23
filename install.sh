@@ -15,6 +15,9 @@ warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 title() { echo -e "\n${BLUE}$1${NC}"; }
 
+# shellcheck source=lib/menu.sh
+. ./lib/menu.sh
+
 ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0; SKIP_LINK=0
 OPT_DOMAIN=""; OPT_DIR=""; OPT_PHP=""; OPT_DNS_PORT=""; OPT_IMAGES=""; OPT_PROFILES=""
 
@@ -98,6 +101,37 @@ DEF_PHP="${PHP_VERSION:-84}"
 DEF_DNS_PORT="${DNS_PORT:-}"
 case "${IMAGE_MODE:-missing}" in build) DEF_IMAGES="build" ;; *) DEF_IMAGES="pull" ;; esac
 
+# Compose cannot parse the files with an empty PHP_VERSION: `depends_on:
+# php${PHP_VERSION}dev` becomes `phpdev` and the whole project is rejected. .env
+# is written further down, so run compose through an env file that has values.
+# A real .env wins on re-runs: a local override file may define more.
+compose_with_env() {
+    local f out
+    for f in .env .env.example; do
+        [ -f "$f" ] || continue
+        # shellcheck source=/dev/null
+        out="$(set -a +u; . "./$f"; set +a -u; docker compose "$@" 2>/dev/null)"
+        [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
+    done
+    return 1
+}
+
+compose_profiles() { compose_with_env config --profiles; }
+
+# Nothing here enumerates versions: adding php86dev to the compose file is enough.
+php_versions() {
+    compose_with_env config --services | sed -n 's/^php\([0-9][0-9]\)dev$/\1/p' | sort
+}
+
+# What a profile adds on top of the default set, straight from the compose file,
+# so the menu describes itself: pg18 -> postgres:18, mail -> axllent/mailpit.
+profile_images() {
+    comm -13 "$BASE_IMAGES" <(compose_with_env --profile "$1" config --images | sort) \
+        | paste -sd', ' -
+}
+
+valid_profile() { printf '%s\n' "$ALL_PROFILES" | grep -qx "$1"; }
+
 ask() { # prompt, default -> answer on stdout
     local prompt="$1" default="$2" answer
     if [ "$ASSUME_YES" -eq 1 ]; then echo "$default"; return; fi
@@ -115,17 +149,51 @@ confirm() { # prompt -> 0 yes / 1 no
 title "Settings"
 DOMAIN="${OPT_DOMAIN:-$(ask "Development domain?" "$DEF_DOMAIN")}"
 PROJ="${OPT_DIR:-$(ask "Where will your projects live?" "$DEF_DIR")}"
-PHPV="${OPT_PHP:-$(ask "Default PHP version (83, 84 or 85)?" "$DEF_PHP")}"
-echo "  Images: 'pull' downloads prebuilt ones (about a minute)."
-echo "          'build' compiles them here (about 15 minutes the first time),"
-echo "          which is what you want if you plan to edit docker-library/."
-IMAGES="${OPT_IMAGES:-$(ask "Pull the images or build them?" "$DEF_IMAGES")}"
+PHP_LIST="$(php_versions)" || {
+    err "Could not read the PHP versions from the compose file."
+    echo "  Check it by hand:  docker compose config --services" >&2
+    exit 1
+}
+
+opts=()
+while read -r v; do
+    [ -n "$v" ] || continue
+    opts+=("${v}	PHP $(echo "$v" | sed 's/\(.\)\(.\)/\1.\2/')")
+done <<EOF
+$PHP_LIST
+EOF
+
+if [ -n "$OPT_PHP" ]; then
+    PHPV="$OPT_PHP"
+elif [ "$ASSUME_YES" -eq 1 ] || ! menu_available; then
+    echo "  Available: $(printf '%s\n' "$PHP_LIST" | sed 's/\(.\)\(.\)/\1.\2/' | paste -sd' ' -)"
+    PHPV="$(ask "Default PHP version?" "$DEF_PHP")"
+else
+    PHPV="$(menu_one "Default PHP version" "$DEF_PHP" "${opts[@]}")"
+fi
+
+if [ -n "$OPT_IMAGES" ]; then
+    IMAGES="$OPT_IMAGES"
+elif [ "$ASSUME_YES" -eq 1 ] || ! menu_available; then
+    echo "  Images: 'pull' downloads prebuilt ones (about a minute)."
+    echo "          'build' compiles them here (about 15 minutes the first time),"
+    echo "          which is what you want if you plan to edit docker-library/."
+    IMAGES="$(ask "Pull the images or build them?" "$DEF_IMAGES")"
+else
+    IMAGES="$(menu_one "Images" "$DEF_IMAGES" \
+        "pull	download prebuilt images, about a minute" \
+        "build	compile them here, ~15 min the first time - to edit docker-library/")"
+fi
 
 # compose does not understand ~, so store an absolute path
 PROJ="${PROJ/#\~/$HOME}"
 case "$PROJ" in /*) ;; *) PROJ="$PWD/$PROJ" ;; esac
 
-case "$PHPV" in 83|84|85) ;; *) err "PHP version must be 83, 84 or 85 (got: $PHPV)"; exit 1 ;; esac
+printf '%s\n' "$PHP_LIST" | grep -qx "$PHPV" || {
+    err "Unknown PHP version: $PHPV"
+    echo "  available: $(printf '%s\n' "$PHP_LIST" | paste -sd' ' -)" >&2
+    exit 1
+}
 case "$IMAGES" in
     pull)  IMAGE_MODE_V="missing" ;;
     build) IMAGE_MODE_V="build" ;;
@@ -158,23 +226,6 @@ info "Your user: uid $PUID_V, gid $PGID_V"
 # ---------- databases and mail ----------
 # Both are compose profiles, so this just builds COMPOSE_PROFILES.
 
-# Compose cannot parse the files with an empty PHP_VERSION: `depends_on:
-# php${PHP_VERSION}dev` becomes `phpdev` and the whole project is rejected. .env
-# is written further down, so read the list through an env file that has values.
-# A real .env wins on re-runs: a local override file may add profiles of its own.
-compose_profiles() {
-    local f out
-    for f in .env .env.example; do
-        [ -f "$f" ] || continue
-        # shellcheck source=/dev/null
-        out="$(set -a +u; . "./$f"; set +a -u; docker compose config --profiles 2>/dev/null)"
-        [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
-    done
-    return 1
-}
-
-valid_profile() { printf '%s\n' "$ALL_PROFILES" | grep -qx "$1"; }
-
 title "Databases and mail"
 
 ALL_PROFILES="$(compose_profiles)" || {
@@ -187,12 +238,6 @@ DB_PROFILES="$(printf '%s\n' "$ALL_PROFILES" | grep -E '^(pg|mariadb)[0-9]+$' ||
 
 echo "  Nothing is started unless you pick it. You can change this later with"
 echo "  'forge db on|off <name>' and 'forge mail on|off'."
-echo ""
-echo "  Databases (type the names, space separated):"
-for engine in "PostgreSQL:^pg[0-9]+$" "MariaDB:^mariadb[0-9]+$"; do
-    names="$(printf '%s\n' "$DB_PROFILES" | grep -E "${engine#*:}" | paste -sd' ' - || true)"
-    [ -n "$names" ] && printf '    %-12s %s\n' "${engine%%:*}" "$names"
-done
 echo ""
 
 PROFILES=""
@@ -207,7 +252,13 @@ if [ -n "$OPT_PROFILES" ]; then
         }
     done
     PROFILES="$OPT_PROFILES"
-else
+elif [ "$ASSUME_YES" -eq 1 ] || ! menu_available; then
+    echo "  Databases (type the names, space separated):"
+    for engine in "PostgreSQL:^pg[0-9]+$" "MariaDB:^mariadb[0-9]+$"; do
+        names="$(printf '%s\n' "$DB_PROFILES" | grep -E "${engine#*:}" | paste -sd' ' - || true)"
+        [ -n "$names" ] && printf '    %-12s %s\n' "${engine%%:*}" "$names"
+    done
+    echo ""
     DBS="$(ask "Which databases? (space separated, or none)" "${COMPOSE_PROFILES:-none}")"
     case "$DBS" in none|"") DBS="" ;; esac
     for d in ${DBS//,/ }; do
@@ -222,6 +273,25 @@ else
     if confirm "Catch outgoing mail at mail.${DOMAIN}?"; then
         PROFILES="${PROFILES:+$PROFILES,}mail"
     fi
+else
+    echo "  reading the compose file..."
+    BASE_IMAGES="$(mktemp)"
+    trap 'rm -f "$BASE_IMAGES"' EXIT
+    compose_with_env config --images | sort > "$BASE_IMAGES"
+
+    opts=()
+    while read -r d; do
+        [ -n "$d" ] || continue
+        opts+=("${d}	$(profile_images "$d")")
+    done <<EOF
+$DB_PROFILES
+EOF
+    if valid_profile mail; then
+        opts+=("mail	$(profile_images mail)  ->  mail.${DOMAIN}")
+    fi
+
+    PROFILES="$(menu_many "Optional services" "${COMPOSE_PROFILES:-}" "${opts[@]}")"
+    rm -f "$BASE_IMAGES"; trap - EXIT
 fi
 
 # ---------- write .env ----------

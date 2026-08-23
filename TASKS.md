@@ -1166,3 +1166,20 @@ what the README explains first.
       profiles — `mail`, `nginx`, `search` and `tools` are invisible. Wanted: one
       command that lists every profile with what it starts and whether it is on, so
       the answer does not live only in `docker-compose.override.yml`.
+
+      **Two pieces from task 33 are already sitting there for this.**
+
+      - `profile_images()` in `install.sh` derives what a profile adds by diffing
+        `docker compose config --images` against the base set. That is exactly the
+        "what it starts" column, and it stays correct on its own — `forge db list`
+        could show `pg18  postgres:18` instead of bare `pg18`. It belongs in a shared
+        place if both callers want it; `install.sh` also has `compose_with_env()`,
+        which only the installer needs (it runs before `.env` exists, while `forge`
+        is behind `need_env`).
+      - `lib/menu.sh` is sourceable from `bin/forge`, which resolves the same root
+        (`bin/forge:9`). If `forge db` should become selectable rather than
+        name-argument driven, the menus are written and already exercised by CI.
+
+      Also worth folding in: `db_profiles()` (`bin/forge:123`) swallows errors the
+      same way task 32's bug did — `2>/dev/null ... || true`. Every caller is behind
+      `need_env` today, so it cannot bite, but this task rewrites that function.

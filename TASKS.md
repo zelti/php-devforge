@@ -1004,3 +1004,111 @@ directly rather than only its README examples.
 
       A green branch and a red main is also a reminder that branch CI is not proof:
       timing differs, and the merge runs alongside the publish workflow.
+
+---
+
+## 🧪 Found in the first clean install (2026-08-23)
+
+First run of `./install.sh` from a fresh clone on a wiped machine — no images, no
+build cache, no `.env`, no CA. The stack came up and worked. Everything below is
+about the parts around it: what the installer asks, what it says at the end, and
+what the README explains first.
+
+- [ ] **32. The installer asks for the database names but never shows them** — BUG
+      The prompt prints an empty list, so you have to guess:
+
+      ```
+      Databases available:
+      Which databases? (space separated, or none) [none]:
+      ```
+
+      `install.sh:164` runs `docker compose config --profiles`, which needs `.env`
+      for variable interpolation. The databases section deliberately runs *before*
+      `.env` is written (task 27 moved it there to fix an unbound variable), so the
+      command exits 1 and prints nothing. Reproduced:
+
+      | | |
+      |---|---|
+      | without `.env` | exit 1, no output |
+      | with a minimal `.env` | `mail mariadb11 mariadb12 nginx pg16 pg17 pg18 search tools` |
+
+      The `2>/dev/null` hides the failure, so it degrades to a silent empty list
+      rather than an error.
+
+      Fix: get the profile list without depending on `.env` — write the temporary
+      values to a scratch file and pass `--env-file`, or read `profiles:` out of
+      `docker-compose.override.yml`. Same shape of bug as tasks 12 and 24: a command
+      that can fail, with its failure swallowed.
+
+- [ ] **33. Free-text prompts where a selectable list belongs**
+      Two questions expect typed input for a closed set of options:
+
+      - **Images**: `Pull the images or build them? [pull]:` — the paragraph above it
+        explains both, but you have to read it all before answering.
+      - **Databases**: typing space-separated names you have not been shown.
+
+      Both should be arrow-key selections: highlight an option, see what it does,
+      space to toggle for the multi-choice one. No typing, no guessing at names, and
+      the explanation attaches to the option instead of sitting in a wall of text
+      above the prompt.
+
+      Keep typed input working for `--profiles` and friends, so scripted and CI
+      installs do not need a TTY. If there is no terminal, fall back to the current
+      prompts.
+
+- [ ] **34. The installer's last words send you to `docker compose`, not `forge`**
+      It ends with:
+
+      ```
+      🎉 Done. Restart your browser so it picks up the new CA.
+         Start the environment with: docker compose up -d
+      ```
+
+      So the first command anyone learns is the one `forge` exists to replace, and
+      `forge help` never gets discovered. It should say `forge start`.
+
+- [ ] **35. The README teaches `docker compose` in 11 places**
+      Same problem, wider. `README.md` lines 133, 269, 318, 322, 368, 401, 433, 436,
+      439 and the Spanish equivalents reach for compose where a `forge` subcommand
+      exists.
+
+      Make `forge` the documented interface, and say once — near the top — that it
+      wraps `docker compose`, so anyone who knows compose knows nothing is hidden and
+      the raw commands still work. Where no `forge` equivalent exists yet, that is a
+      gap to close, not a reason to document compose.
+
+- [ ] **36. There is no uninstall**
+      `install.sh` writes `.env`, generates certificates, installs a CA into the
+      system trust store and the NSS stores, symlinks `forge` into `~/.local/bin`,
+      creates `~/php-devforge`, and configures systemd-resolved. Undoing that today
+      means knowing all of it.
+
+      Wanted: `forge uninstall`, doing the reverse in the reverse order, saying what
+      it will touch before touching it, and asking separately about the two things
+      that are not ours to assume — the projects directory and the docker volumes
+      holding database data.
+
+      Reconstructing this list by hand for the cleanup on 2026-08-22 is what turned
+      up the missing pieces: base images, 13.6 GB of build cache, and dangling
+      images. An uninstall command should get those right without a person auditing
+      `docker system df` afterwards.
+
+- [ ] **37. "How it works" opens with the most advanced thing in the project**
+      `README.md:22` starts with the `sites/` folder and hostnames like
+      `v2--api.phpforge.dev` — path segments reversed and joined with `--` — before
+      saying what the basic rule is. It also shows `my-app.phpforge.dev` there and
+      `my-app--sites.phpforge.dev` further down, which reads like two different
+      systems.
+
+      Lead with the plain rule: a folder becomes a URL, nothing to register or
+      restart. Then introduce `sites/` as what it is — the shortcut you reach for
+      when you want a cleaner URL — rather than as the way it works.
+
+- [ ] **38. Profiles are not discoverable from the command line**
+      `forge help` and `forge db list` both already exist, which is its own evidence
+      for tasks 34 and 35: they were never found because nothing points at them.
+
+      `forge db list` also only covers `pg*` and `mariadb*`. The stack has nine
+      profiles — `mail`, `nginx`, `search` and `tools` are invisible. Wanted: one
+      command that lists every profile with what it starts and whether it is on, so
+      the answer does not live only in `docker-compose.override.yml`.

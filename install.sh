@@ -157,25 +157,66 @@ info "Your user: uid $PUID_V, gid $PGID_V"
 
 # ---------- databases and mail ----------
 # Both are compose profiles, so this just builds COMPOSE_PROFILES.
+
+# Compose cannot parse the files with an empty PHP_VERSION: `depends_on:
+# php${PHP_VERSION}dev` becomes `phpdev` and the whole project is rejected. .env
+# is written further down, so read the list through an env file that has values.
+# A real .env wins on re-runs: a local override file may add profiles of its own.
+compose_profiles() {
+    local f out
+    for f in .env .env.example; do
+        [ -f "$f" ] || continue
+        # shellcheck source=/dev/null
+        out="$(set -a +u; . "./$f"; set +a -u; docker compose config --profiles 2>/dev/null)"
+        [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
+    done
+    return 1
+}
+
+valid_profile() { printf '%s\n' "$ALL_PROFILES" | grep -qx "$1"; }
+
 title "Databases and mail"
+
+ALL_PROFILES="$(compose_profiles)" || {
+    err "Could not read the compose profiles."
+    echo "  Check it by hand:  docker compose config --profiles" >&2
+    exit 1
+}
+
+DB_PROFILES="$(printf '%s\n' "$ALL_PROFILES" | grep -E '^(pg|mariadb)[0-9]+$' || true)"
+
 echo "  Nothing is started unless you pick it. You can change this later with"
 echo "  'forge db on|off <name>' and 'forge mail on|off'."
 echo ""
-echo "  Databases available: $(docker compose config --profiles 2>/dev/null | grep -E '^(pg|mariadb)' | tr '\n' ' ')"
+echo "  Databases (type the names, space separated):"
+for engine in "PostgreSQL:^pg[0-9]+$" "MariaDB:^mariadb[0-9]+$"; do
+    names="$(printf '%s\n' "$DB_PROFILES" | grep -E "${engine#*:}" | paste -sd' ' - || true)"
+    [ -n "$names" ] && printf '    %-12s %s\n' "${engine%%:*}" "$names"
+done
+echo ""
 
 PROFILES=""
 if [ -n "$OPT_PROFILES" ]; then
+    # Nobody is watching a scripted install, so an unknown name is an error here
+    # rather than a warning that scrolls past.
+    for d in ${OPT_PROFILES//,/ }; do
+        valid_profile "$d" || {
+            err "Unknown profile '$d'"
+            echo "  available: $(printf '%s\n' "$ALL_PROFILES" | paste -sd' ' -)" >&2
+            exit 1
+        }
+    done
     PROFILES="$OPT_PROFILES"
 else
     DBS="$(ask "Which databases? (space separated, or none)" "${COMPOSE_PROFILES:-none}")"
     case "$DBS" in none|"") DBS="" ;; esac
-    for d in $DBS; do
-        d="${d//,/}"
+    for d in ${DBS//,/ }; do
         [ -z "$d" ] && continue
-        if docker compose config --profiles 2>/dev/null | grep -qx "$d"; then
+        if valid_profile "$d"; then
             PROFILES="${PROFILES:+$PROFILES,}$d"
         else
             warn "Unknown database '$d', skipped"
+            echo "         available: $(printf '%s\n' "$DB_PROFILES" | paste -sd' ' -)"
         fi
     done
     if confirm "Catch outgoing mail at mail.${DOMAIN}?"; then

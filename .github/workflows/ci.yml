@@ -432,8 +432,14 @@ jobs:
           forge profile on pg18
           docker compose ps --services | grep -qx postgres18dev
 
-          if forge profile on tools; then echo "one-shot profile accepted"; exit 1; fi
-          forge profile on tools 2>&1 | grep -q 'forge certs'
+          # Captured, not piped: forge exits 1 here by design, and under pipefail
+          # a pipeline reports the leftmost failure -- so `forge ... | grep` fails
+          # even when grep finds what it was looking for.
+          out="$(forge profile on tools 2>&1 || true)"
+          printf '%s\n' "$out" | grep -q 'forge certs'
+          if forge profile on tools >/dev/null 2>&1; then
+            echo "a one-shot profile was accepted"; exit 1
+          fi
           if forge profile on nope; then echo "unknown profile accepted"; exit 1; fi
 
           forge db list | grep -q pg18        # the wrapper still works

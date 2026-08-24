@@ -130,7 +130,7 @@ Then open **https://welcome--sites.phpforge.dev**.
 
 4. **Start the containers:**
     ```bash
-    docker compose up -d
+    forge start
     ```
     Or `forge start`, which works from anywhere.
 
@@ -151,6 +151,11 @@ forge use 8.5                # set the default PHP version
 forge shell 8.4              # open a shell in a container
 forge logs 8.4               # follow its logs
 
+forge profile list           # optional services, and which are on
+forge profile on|off <name>  # turn one on or off
+forge db list                # the databases among them
+forge mail on|off            # a mail catcher at mail.<domain>
+
 forge images build|pull      # build locally, or use the published images
 forge certs                  # regenerate the certificates
 forge dns status             # inspect the local DNS
@@ -161,6 +166,12 @@ forge help
 `forge` works from any directory, in any shell. The installer links it into
 `~/.local/bin`. Version arguments accept `8.5` or `85`, and the available versions
 come from `docker-compose.yml` — add a service and `forge use 8.6` just works.
+
+It is a wrapper around `docker compose`, not a replacement for it: nothing is
+hidden and the raw commands still work from the project directory. It exists so
+the things you do daily are one word, and so the ones with a trick to them — a
+relative symlink the containers can follow, nginx and Apache not fighting over
+port 80 — are right without you remembering why.
 
 ### 🌐 Accessing Your Projects
 
@@ -224,10 +235,22 @@ come from `docker-compose.yml` — add a service and `forge use 8.6` just works.
 
 ### 🔄 Development Workflow
 
-- Edit code in your IDE (files are volume-mounted for live updates)
-- Changes appear immediately without restarting containers
-- Use Xdebug for debugging (configure your IDE to listen on port **9003**, the Xdebug 3 default)
+- Edit code in your editor — the files are volume-mounted, so changes are live
+- Nothing to restart for a code change
 - Open a shell in a container with `forge shell 8.4`
+- Watch what is happening with `forge logs`
+
+### 🐞 Xdebug
+
+Inside a container:
+
+```bash
+xdebug                    # toggle it on or off
+xdebug --force-activate
+xdebug /path/script.php   # run one script with it on, then turn it back off
+```
+
+Point your editor at port **9003**, the Xdebug 3 default.
 
 ## 🌐 Local DNS
 
@@ -236,11 +259,14 @@ the stack's dnsmasq; the rest of your DNS is untouched, so stopping the containe
 never costs you internet access.
 
 ```bash
-./setup-local-dns.sh            # apply
-./setup-local-dns.sh --status   # show what is configured
-./setup-local-dns.sh --test     # check resolution
-./setup-local-dns.sh --remove   # undo: deletes one file
+forge dns setup     # apply
+forge dns status    # show what is configured
+forge dns test      # check resolution
+forge dns remove    # undo: deletes one file
 ```
+
+These call `./setup-local-dns.sh`, which you can also run directly with the same
+options as `--flags`.
 
 dnsmasq listens on `127.0.0.1:${DNS_PORT}` rather than port 53, which is usually
 taken by systemd-resolved, Pi-hole or similar. The installer picks a free port and
@@ -266,7 +292,7 @@ upload_max_filesize = 100M
 ```
 
 ```bash
-docker compose up -d --force-recreate php84dev
+forge restart php84dev
 ```
 
 It is scanned *in addition to* the image's own config, so nothing is shadowed and
@@ -315,12 +341,13 @@ IMAGE_MODE=build     # always build locally
 IMAGE_MODE=always    # re-pull every time, to force the newest published image
 ```
 
-Then `docker compose up -d`.
+Then `forge start`. Or skip the editing: `forge images build` and `forge images pull`
+set that line and restart for you.
 
 Pick `build` if you edit anything under `docker-library/`: your changes are picked
 up automatically, and Docker's layer cache makes it cheap when nothing changed.
-Either way `docker compose build` still builds on demand, and compose falls back
-to building if an image cannot be pulled.
+Either way an image still gets built on demand, and compose falls back to building
+if one cannot be pulled.
 
 **Note:** settings baked in at build time — `NODE_VERSION`, for instance — only
 apply when you build. A pulled image already has them fixed.
@@ -365,11 +392,13 @@ Some services are not started by default. They carry a compose `profile`, so you
 ask for them when you want them:
 
 ```bash
-docker compose --profile search up -d      # Elasticsearch + Kibana
+forge profile list                 # what exists, and what is on
+forge profile on search            # Elasticsearch + Kibana
+forge profile off search
 ```
 
-Profiles are a compose feature, so this one stays a `docker compose` command;
-`forge start` covers the default set.
+The listing reads the compose files, so it stays right on its own: each row shows
+the images that profile starts.
 
 | Profile | Services | Notes |
 |---|---|---|
@@ -398,8 +427,8 @@ would rather run nginx, it is there — as an alternative, not an addition, sinc
 want ports 80 and 443:
 
 ```bash
-docker compose stop apachedev
-docker compose --profile nginx up -d nginxdev
+forge profile on nginx     # stops apachedev; they cannot share the ports
+forge profile off nginx    # and brings it back
 ```
 
 It serves the same URLs, including nested paths and the `--pNN` version suffix.
@@ -425,18 +454,28 @@ container; your IDE should listen on port **9003**.
 
 ## 🐛 Troubleshooting
 
-### ❓ Common Issues
+- **DNS not resolving**: run `forge dns status` and `forge dns test`. You may need to
+  restart your browser.
+- **SSL certificate not trusted**: re-run `forge certs` and restart your browser.
+  Firefox keeps its own trust store on Linux: install `nss` (Arch) or `libnss3-tools`
+  (Debian/Ubuntu) and try again.
+- **Containers not starting**: check Docker is running and that ports 80 and 443 are
+  free.
+- **Permission issues under `public_html`**: check `PUID`/`PGID` in `.env` match your
+  own (`id -u`, `id -g`), then `forge restart`. The containers adopt those ids on
+  startup, so files they write belong to you.
+- **PHP version not switching**: check `PHP_VERSION` in `.env`, or append
+  `--p83`/`--p84`/`--p85` to the host name. `forge status` prints the default.
+- **`npm` prints a notice about pnpm**: deliberate. npm still works; pnpm is preferred
+  here.
+- **An `.ini` in `custom/php.d/` seems ignored**: recreate the container with
+  `forge restart php84dev`. A plain restart does not re-read it.
+- **`forge: command not found`**: the installer links it into `~/.local/bin`, which
+  some shells do not have on `PATH`. Add it, or `source aliases.bash` from the project
+  directory.
 
-- **DNS resolution not working**: Ensure you ran `./setup-local-dns.sh` and restarted your browser or system. You may need to flush DNS cache.
-- **PHP version not switching**: check `PHP_VERSION` in `.env` (83, 84 or 85), or append `--p83`/`--p84`/`--p85` to the host. `forge status` prints the default.
-- **`npm` prints a message about pnpm**: intentional. npm still runs; pnpm is preferred here.
-- **An `.ini` in `custom/php.d/` seems ignored**: recreate the container, `docker compose up -d --force-recreate php84dev`. A restart alone does not re-read it.
-- **SSL certificate not trusted**: Make sure you ran `./install_cert.sh` and restart your browser afterwards. Check the CA is present with `openssl verify -CAfile .caroot/rootCA.pem certificates/php-devforge.pem`. Firefox keeps its own trust store on Linux, so install `nss` (Arch) or `libnss3-tools` (Debian/Ubuntu) and re-run the script if Firefox still complains.
-- **Containers not starting**: Check that Docker and Docker Compose are installed and running. Ensure ports 80 and 443 are not in use by other services.
-- **Permission issues with public_html**: Check that `PUID`/`PGID` in `.env` match your own ids (`id -u`, `id -g`), then recreate the containers with `docker compose up -d --force-recreate`. The containers adopt those ids on startup, so files they write are owned by you.
-- **Aliases not working**: Ensure you sourced `aliases.bash` or added it to your `~/.bashrc`.
-
-For more help, check the logs with `docker compose logs` or create an issue on GitHub.
+For more help, check the logs with `forge logs` — or `forge logs apachedev` for one
+service — or open an issue on GitHub.
 
 ## 🤝 Contributing
 

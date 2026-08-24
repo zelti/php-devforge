@@ -86,10 +86,26 @@ cmd_shell() {
     docker exec -it -w "$wd" -u php-devforge "php${v}dev" bash
 }
 
+# No argument means every service: when something breaks you rarely know which
+# container to look at, and picking one for you is how `docker compose logs`
+# ended up in the troubleshooting section instead of this command.
 cmd_logs() {
     need_env
-    local v; v="$(normalise "${1:-$(current_version)}")"
-    docker compose logs -f "php${v}dev"
+    local arg="${1:-}"
+    if [ -z "$arg" ]; then
+        docker compose logs -f
+    elif printf '%s' "$arg" | grep -qE '^[0-9]+\.?[0-9]+$'; then
+        docker compose logs -f "php$(normalise "$arg")dev"
+    else
+        # Plain compose here, not compose_with_env: that one clears
+        # COMPOSE_PROFILES, which would hide mailpit and the databases.
+        docker compose config --services | grep -qx "$arg" || {
+            err "Unknown service: $arg"
+            echo "  available: $(docker compose config --services | sort | paste -sd' ' -)" >&2
+            exit 1
+        }
+        docker compose logs -f "$arg"
+    fi
 }
 
 cmd_mail() {
@@ -291,7 +307,7 @@ PHP DevForge
 
   forge use <version>          set the default PHP version
   forge shell [version]        open a shell in a PHP container
-  forge logs  [version]        follow a container's logs
+  forge logs  [version|service] follow the logs; everything if you name nothing
 
   forge link <folder> [name]   publish a project: symlinks it under sites/
 

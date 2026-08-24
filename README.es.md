@@ -133,11 +133,13 @@ Y abre **https://welcome--sites.phpforge.dev**.
 
 4. **Levanta el entorno:**
    ```bash
-   docker compose up -d
+   forge start
    ```
    Comprueba que funciona: `https://welcome--sites.phpforge.dev`
 
 ## 💻 Uso
+
+### ▶️ Arrancar y parar
 
 ```bash
 forge start                  # levantar todo
@@ -150,6 +152,11 @@ forge use 8.5                # cambiar la versión por defecto
 forge shell 8.4              # entrar a un contenedor
 forge logs 8.4               # seguir sus logs
 
+forge profile list           # servicios opcionales, y cuáles están encendidos
+forge profile on|off <nom>   # encender o apagar uno
+forge db list                # las bases de datos entre ellos
+forge mail on|off            # un buzón de pruebas en mail.<dominio>
+
 forge images build|pull      # construir en local, o usar las publicadas
 forge certs                  # regenerar los certificados
 forge dns status             # ver el DNS local
@@ -161,6 +168,12 @@ forge help
 enlaza en `~/.local/bin`. Los argumentos de versión aceptan `8.5` u `85`, y las
 versiones disponibles salen de `docker-compose.yml` — añade un servicio y
 `forge use 8.6` funciona solo.
+
+Es un envoltorio de `docker compose`, no un reemplazo: no esconde nada y los
+comandos crudos siguen funcionando desde la carpeta del proyecto. Existe para que
+lo que haces a diario sea una palabra, y para que lo que tiene truco — un enlace
+relativo que los contenedores puedan seguir, nginx y Apache sin pelearse por el
+puerto 80 — salga bien sin que tengas que acordarte de por qué.
 
 ### 🌐 Tus proyectos
 
@@ -216,6 +229,13 @@ ln -s ../projects/mi-app/public ~/php-devforge/sites/mi-app
 El enlace debe apuntar a la carpeta que contiene el `index.php` (el `public/` del
 framework). El `.htaccess` funciona: `AllowOverride All` está activado.
 
+### 🔄 Día a día
+
+- Edita el código en tu editor — los archivos están montados, los cambios son inmediatos
+- No hay que reiniciar nada por un cambio de código
+- Entra a un contenedor con `forge shell 8.4`
+- Mira qué está pasando con `forge logs`
+
 ### 🐞 Xdebug
 
 Dentro del contenedor:
@@ -235,11 +255,14 @@ del stack; el resto de tu DNS no se toca, así que apagar los contenedores nunca
 sin internet.
 
 ```bash
-./setup-local-dns.sh            # aplicar
-./setup-local-dns.sh --status   # ver la configuración
-./setup-local-dns.sh --test     # comprobar la resolución
-./setup-local-dns.sh --remove   # deshacer: borra un archivo
+forge dns setup     # aplicar
+forge dns status    # ver la configuración
+forge dns test      # comprobar la resolución
+forge dns remove    # deshacer: borra un archivo
 ```
+
+Llaman a `./setup-local-dns.sh`, que también puedes ejecutar directamente con las
+mismas opciones como `--banderas`.
 
 dnsmasq escucha en `127.0.0.1:${DNS_PORT}` en vez del puerto 53, que suele estar
 ocupado por systemd-resolved, Pi-hole o similar. El instalador busca uno libre y lo
@@ -264,7 +287,7 @@ upload_max_filesize = 100M
 ```
 
 ```bash
-docker compose up -d --force-recreate php84dev
+forge restart php84dev
 ```
 
 Se lee *además* de la configuración de la imagen, así que no pisa nada y el interruptor
@@ -312,7 +335,8 @@ IMAGE_MODE=build     # construir siempre en local
 IMAGE_MODE=always    # volver a descargar, para forzar la última publicada
 ```
 
-Después, `docker compose up -d`.
+Después, `forge start`. O sáltate la edición: `forge images build` y
+`forge images pull` ponen esa línea y reinician por ti.
 
 Elige `build` si editas algo dentro de `docker-library/`: tus cambios se recogen solos,
 y la caché de Docker hace que no cueste nada cuando no hay cambios.
@@ -360,11 +384,13 @@ Algunos no se levantan por defecto. Llevan un `profile` de compose, así que los
 cuando los quieras:
 
 ```bash
-docker compose --profile search up -d      # Elasticsearch + Kibana
+forge profile list                 # qué existe, y qué está encendido
+forge profile on search            # Elasticsearch + Kibana
+forge profile off search
 ```
 
-Los perfiles son cosa de compose, así que este sigue siendo un comando de
-`docker compose`; `forge start` cubre el conjunto por defecto.
+El listado lee los archivos de compose, así que se mantiene solo: cada fila muestra
+las imágenes que arranca ese perfil.
 
 | Perfil | Servicios | Notas |
 |---|---|---|
@@ -393,8 +419,8 @@ prefieres nginx, está disponible — como alternativa, no como añadido, porque
 quieren los puertos 80 y 443:
 
 ```bash
-docker compose stop apachedev
-docker compose --profile nginx up -d nginxdev
+forge profile on nginx     # para apachedev; no pueden compartir los puertos
+forge profile off nginx    # y lo devuelve
 ```
 
 Sirve las mismas URLs, incluidas las rutas anidadas y el sufijo `--pNN`.
@@ -420,21 +446,28 @@ dentro de un contenedor; tu editor debe escuchar en el puerto **9003**.
 
 ## 🐛 Problemas comunes
 
-- **El DNS no resuelve**: ejecuta `./setup-local-dns.sh --status` y `--test`. Puede
-  hacer falta reiniciar el navegador.
-- **El certificado no es de confianza**: vuelve a ejecutar `./install_cert.sh` y
-  reinicia el navegador. Firefox tiene su propio almacén en Linux: instala `nss` (Arch)
-  o `libnss3-tools` (Debian/Ubuntu) y repite.
+- **El DNS no resuelve**: ejecuta `forge dns status` y `forge dns test`. Puede hacer
+  falta reiniciar el navegador.
+- **El certificado no es de confianza**: vuelve a ejecutar `forge certs` y reinicia el
+  navegador. Firefox tiene su propio almacén en Linux: instala `nss` (Arch) o
+  `libnss3-tools` (Debian/Ubuntu) y repite.
 - **Los contenedores no arrancan**: comprueba que Docker esté corriendo y que los
   puertos 80 y 443 estén libres.
-- **Problemas de permisos**: revisa que `PUID`/`PGID` en `.env` coincidan con los tuyos
-  (`id -u`, `id -g`) y recrea los contenedores.
-- **No cambia la versión de PHP**: revisa `PHP_VERSION` en `.env` (83, 84 u 85), o añade
-  `--p83`/`--p84`/`--p85` al host.
-- **`npm` muestra un aviso sobre pnpm**: es a propósito. npm sigue funcionando.
+- **Problemas de permisos bajo `public_html`**: revisa que `PUID`/`PGID` en `.env`
+  coincidan con los tuyos (`id -u`, `id -g`) y haz `forge restart`. Los contenedores
+  adoptan esos ids al arrancar, así que lo que escriben es tuyo.
+- **No cambia la versión de PHP**: revisa `PHP_VERSION` en `.env`, o añade
+  `--p83`/`--p84`/`--p85` al nombre del host. `forge status` muestra la de por defecto.
+- **`npm` muestra un aviso sobre pnpm**: es a propósito. npm sigue funcionando; aquí se
+  prefiere pnpm.
 - **Un `.ini` de `custom/php.d/` parece ignorado**: recrea el contenedor con
-  `docker compose up -d --force-recreate php84dev`. Reiniciar no basta.
-- **Los alias no funcionan**: asegúrate de haber hecho `source aliases.bash`.
+  `forge restart php84dev`. Reiniciar no basta.
+- **`forge: command not found`**: el instalador lo enlaza en `~/.local/bin`, que
+  algunos shells no tienen en el `PATH`. Añádelo, o haz `source aliases.bash` desde la
+  carpeta del proyecto.
+
+Para más ayuda, mira los logs con `forge logs` — o `forge logs apachedev` para un
+servicio — o abre un issue en GitHub.
 
 ## 🤝 Contribuir
 

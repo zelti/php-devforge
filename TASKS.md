@@ -1292,7 +1292,7 @@ what the README explains first.
 Both surfaced from running the CI steps against running containers rather than
 reasoning about them.
 
-- [ ] **39. nginx dies when there is no certificate; Apache degrades**
+- [x] **39. nginx dies when there is no certificate; Apache degrades** — FIXED
       A checkout without `certificates/php-devforge.pem` — a fresh clone, or one where
       `install_cert.sh` was skipped — cannot run the nginx variant at all:
 
@@ -1317,6 +1317,36 @@ reasoning about them.
 
       CI never caught this because it runs `install_cert.sh` before the nginx step,
       so the certificate always exists there.
+
+      Fixed with an entrypoint mirroring Apache's. nginx has no `<IfFile>`, so the
+      choice is made in the script and handed to the template as `$SSL_CERT` /
+      `$SSL_KEY` — the templates were already rendered with `envsubst`, so this adds
+      two variables to a list that exists to keep nginx's own `$mail` and
+      `$subdomains` from being substituted. The entrypoint also absorbed the
+      `envsubst` calls that were inlined in `CMD`, which is now just
+      `openresty -g 'daemon off;'`.
+
+      Kept as a second copy rather than shared with Apache's: the common part is
+      twelve lines of `openssl`, and sharing means widening both build contexts to
+      `./docker-library`, shipping every other image's files as context.
+
+      **The planning turned up a second hole: Apache's fallback had never been
+      tested either.** Nothing in CI removed the certificates, so the safety net
+      written in task 7 had been assumed to work for weeks. It does — verified for
+      the first time here — but that is luck, not coverage. The new step exercises
+      both servers.
+
+      It checks the certificate's **issuer**, not just that HTTPS answers: `curl -k`
+      accepts anything, so an assertion built on it would pass even if the fallback
+      were never generated and a stale file were being served. A self-signed
+      certificate has issuer equal to subject; mkcert's does not.
+
+      Two things proven rather than assumed:
+
+      | | |
+      |---|---|
+      | the step fails without the fix | reverted the entrypoint, got `nginxdev is not running` |
+      | the cleanup survives a failure | a `trap ... EXIT` puts the certificates back even when the step dies halfway, which the first version did not — it left every later step testing a degraded stack |
 
 - [ ] **40. Two checkouts of the project fight over the same containers**
       `COMPOSE_PROJECT_NAME=php-devforge` is a fixed literal in `.env.example:4`, so

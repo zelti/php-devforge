@@ -21,6 +21,7 @@ jobs:
           shellcheck --severity=warning \
             install.sh install_cert.sh setup-local-dns.sh aliases.bash \
             lib/menu.sh lib/compose.sh bin/forge \
+            docker-library/nginx/config_files/docker-entrypoint.sh \
             docker-library/php/config_files/docker-php-entrypoint \
             docker-library/php/config_files/xdebug \
             docker-library/httpd/config_files/docker-entrypoint.sh
@@ -522,6 +523,67 @@ jobs:
           echo "nginx ok"
           forge profile off nginx
           docker compose ps --services | grep -qx apachedev
+
+      # Neither fallback had ever been exercised: CI runs install_cert.sh first, so
+      # the certificate always existed. nginx died outright without one, and
+      # Apache's safety net -- written in task 7 -- had never been proven to work.
+      - name: a missing certificate degrades instead of killing the server
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          mkdir -p /tmp/certs-aside
+          mv certificates/php-devforge.pem certificates/php-devforge.key /tmp/certs-aside/
+          # Unconditional: a failure halfway through would otherwise leave the
+          # certificates aside, and every later step -- including the log dump on
+          # failure -- would be looking at a degraded stack.
+          trap 'mv /tmp/certs-aside/* certificates/ 2>/dev/null || true' EXIT
+
+          # `curl -k` accepts any certificate, so it cannot tell a generated
+          # fallback from a stale file. The issuer can: a self-signed one signs
+          # itself, mkcert's does not.
+          served_by() {
+            echo | openssl s_client -connect 127.0.0.1:443 -servername "welcome.phpforge.dev" 2>/dev/null \
+              | openssl x509 -noout -issuer
+          }
+
+          docker compose up -d --force-recreate apachedev
+          for i in $(seq 1 30); do
+            curl -fsS -k --max-time 5 --resolve welcome.phpforge.dev:443:127.0.0.1 \
+              https://welcome.phpforge.dev/ >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS -k --resolve welcome.phpforge.dev:443:127.0.0.1 \
+            https://welcome.phpforge.dev/ | grep -q "PHP DevForge is running"
+          served_by | grep -q 'CN=phpforge.dev' || {
+            echo "apache is not serving the generated fallback: $(served_by)"; exit 1; }
+          docker compose logs apachedev | grep -qi 'self-signed'
+          echo "apache degrades"
+
+          forge profile on nginx
+          for i in $(seq 1 30); do
+            curl -fsS -k --max-time 5 --resolve welcome.phpforge.dev:443:127.0.0.1 \
+              https://welcome.phpforge.dev/ >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker compose ps --services | grep -qx nginxdev || {
+            echo "nginxdev is not running"; docker compose logs --tail=20 nginxdev; exit 1; }
+          curl -fsS -k --resolve welcome.phpforge.dev:443:127.0.0.1 \
+            https://welcome.phpforge.dev/ | grep -q "PHP DevForge is running"
+          served_by | grep -q 'CN=phpforge.dev' || {
+            echo "nginx is not serving the generated fallback: $(served_by)"; exit 1; }
+          echo "nginx degrades too"
+
+          # Put it back, or later steps would be testing the wrong certificate.
+          forge profile off nginx
+          mv /tmp/certs-aside/php-devforge.pem /tmp/certs-aside/php-devforge.key certificates/
+          docker compose up -d --force-recreate apachedev
+          for i in $(seq 1 30); do
+            curl -fsS --max-time 5 --resolve welcome.phpforge.dev:443:127.0.0.1 \
+              https://welcome.phpforge.dev/ >/dev/null 2>&1 && break
+            sleep 1
+          done
+          served_by | grep -q 'mkcert' || { echo "the real certificate did not come back"; exit 1; }
+          echo "and the real one comes back"
 
       - name: container logs on failure
         if: failure()

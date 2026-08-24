@@ -479,6 +479,38 @@ dentro de un contenedor; tu editor debe escuchar en el puerto **9003**.
   algunos shells no tienen en el `PATH`. Añádelo, o haz `source aliases.bash` desde la
   carpeta del proyecto.
 
+### Dos copias del proyecto
+
+Cada copia usa el mismo nombre de proyecto de compose, así que un segundo clon —para
+probar una actualización sin tocar lo que funciona— no obtiene su propio entorno.
+Obtiene el mismo:
+
+| Compartido | No compartido |
+|---|---|
+| los contenedores | tu código, en la carpeta que diga cada `.env` |
+| los volúmenes de base de datos | el propio `.env`: dominio, versión de PHP, carpeta de proyectos |
+| los puertos 80 y 443 | los certificados de `certificates/` |
+
+Arrancar desde la segunda carpeta reconfigura los contenedores que ya corren, no crea
+otros. `forge` pregunta antes, y `forge status` dice desde qué carpeta se arrancaron:
+
+```
+[!] These containers were started from:
+      ~/Projects/otra-copia
+    To go back:  cd ~/Projects/otra-copia && forge start
+
+    Take them over? [y/N]
+```
+
+`forge --force <comando>` se salta la pregunta, que es también lo que necesitas donde
+no hay terminal para responderla.
+
+**Tu código nunca corre peligro**: es una carpeta de tu disco, montada dentro. Lo que
+sí comparten las dos carpetas son los datos de las bases de datos, que viven en un
+volumen de Docker con el nombre del proyecto y no el de la carpeta. `forge` no tiene
+ningún comando que los borre — pero un `docker compose down -v` escrito a mano desde
+cualquiera de las dos alcanza a las dos.
+
 Para más ayuda, mira los logs con `forge logs` — o `forge logs apachedev` para un
 servicio — o abre un issue en GitHub.
 

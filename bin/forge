@@ -40,12 +40,43 @@ need_env() {
     [ -f .env ] || { err "No .env here. Run ./install.sh first."; exit 1; }
 }
 
+# Every checkout claims the same compose project, so containers started from
+# another directory look like ours -- `up -d` here silently adopts and
+# reconfigures them. That is not destructive, but it is never what you meant.
+check_owner() {
+    local owner; owner="$(active_dir)"
+    [ -n "$owner" ] || return 0
+    [ "$owner" != "$FORGE_DIR" ] || return 0
+
+    warn "These containers were started from:"
+    echo "      $owner" >&2
+    echo "    Continuing will reconfigure them from here." >&2
+    echo "    To go back:  cd $owner && forge start" >&2
+    echo "" >&2
+
+    if [ "$FORCE" = "1" ]; then
+        warn "Taking over (--force)"
+        return 0
+    fi
+    if [ ! -t 0 ]; then
+        err "No terminal to ask on. Use 'forge --force <command>' to take over."
+        exit 1
+    fi
+    local answer
+    read -r -p "    Take them over? [y/N]: " answer </dev/tty || answer=""
+    case "$answer" in
+        [yY]*) return 0 ;;
+        *) err "Left alone."; exit 1 ;;
+    esac
+}
+
 # nginx replaces apachedev rather than joining it -- they publish the same
 # 80/443 -- but apachedev is in the default set, so a plain `up -d` starts it
 # again and the two race for the port. Every start goes through here.
 # The ${a[@]+...} form is for bash 3.2 on macOS, where an empty array under
 # `set -u` is an error.
 compose_up() {
+    check_owner
     local extra=()
     if is_on nginx; then extra=(--scale apachedev=0); fi
     docker compose up -d "${extra[@]+"${extra[@]}"}" "$@"
@@ -54,7 +85,7 @@ compose_up() {
 pretty() { sed 's/\(.\)\(.\)/\1.\2/'; }
 
 cmd_start()   { need_env; compose_up "$@"; }
-cmd_stop()    { need_env; docker compose stop "$@"; }
+cmd_stop()    { need_env; check_owner; docker compose stop "$@"; }
 cmd_restart() { need_env; compose_up --force-recreate "$@"; }
 
 cmd_status() {
@@ -64,6 +95,10 @@ cmd_status() {
     echo "  default:  PHP $(current_version | pretty)"
     echo "  images:   $(image_mode)"
     echo "  projects: $(sed -ne 's/^PROJECTS_DIR=//p' .env)"
+    local owner; owner="$(active_dir)"
+    if [ -n "$owner" ] && [ "$owner" != "$FORGE_DIR" ]; then
+        echo "  running:  from $owner  (another checkout)"
+    fi
     echo ""
     docker compose ps
 }
@@ -298,6 +333,8 @@ cmd_help() {
     cat <<EOF
 PHP DevForge
 
+  forge --force <command>      take over containers another checkout started
+
   forge install [options]      set everything up (first run, or to reconfigure)
 
   forge start [service...]     start the environment
@@ -326,6 +363,9 @@ Versions available here: $(php_versions | pretty | tr '\n' ' ')
 Version arguments accept either form: 8.5 or 85.
 EOF
 }
+
+FORCE=0
+if [ "${1:-}" = "--force" ]; then FORCE=1; shift; fi
 
 case "${1:-help}" in
     install) shift; cmd_install "$@" ;;

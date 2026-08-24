@@ -1354,7 +1354,7 @@ reasoning about them.
       is what "self-signed" actually means and does not depend on how a build
       formats a name.
 
-- [ ] **40. Two checkouts of the project fight over the same containers**
+- [x] **40. Two checkouts of the project fight over the same containers** — FIXED
       `COMPOSE_PROJECT_NAME=php-devforge` is a fixed literal in `.env.example:4`, so
       every clone claims the same compose project. Seen for real with a second
       checkout used to test a fresh install:
@@ -1378,6 +1378,43 @@ reasoning about them.
 
       The ports make them genuinely exclusive anyway, so the goal is not running both
       at once — it is that the second one refuses clearly instead of silently taking
-      the first one's containers. Options to weigh: derive the name from the checkout
-      directory, keep the literal but have the installer detect an existing project
-      pointing elsewhere and say so, or both.
+      the first one's containers.
+
+      **Decided with the user, after separating what is actually shared.** Code is a
+      bind mount of a real folder and is never at risk. Database data is a named
+      volume labelled `com.docker.compose.project: php-devforge`, so it belongs to the
+      project name rather than to a directory — which is the whole problem in one
+      line. Deriving the name from the checkout would isolate them, but it orphans
+      every existing volume: the user's databases would look deleted.
+
+      So the two stay **one environment reachable from two folders**, and the fix is
+      that taking over is announced and confirmed rather than silent. `forge` asks,
+      `--force` skips the question, and with no terminal it refuses and names the
+      flag. `forge status` now says which folder owns the running containers.
+
+      Detection needs nothing new stored: compose already labels every container with
+      `com.docker.compose.project.working_dir`. `active_dir()` in `lib/compose.sh`
+      reads it through `compose_with_env`, so the installer can call it before `.env`
+      exists — otherwise the project name would fall back to the directory name and
+      find nothing.
+
+      The check sits in `compose_up()`, which task 38 made the single route for every
+      start, plus `cmd_stop` — stopping someone else's containers destroys nothing but
+      is just as surprising.
+
+      **A claim in the plan was wrong and got corrected mid-task.** It said
+      `install.sh` silently repointed the `forge` symlink with `ln -sfn`. It does not:
+      that line only runs when the link is absent or already points here, and there is
+      an explicit "points somewhere else. Left alone." branch. The symlink on this
+      machine had been repointed by hand while setting up local verification, not by
+      the installer.
+
+      CI reproduces it rather than describing it: a real second directory, started
+      from, then taken back — with a `trap` returning ownership however the step ends.
+      Verified that removing `check_owner` makes it fail with `forge took over without
+      being asked`.
+
+      Two things the local run caught that CI would not have: a second clone has no
+      gitignored `docker-compose.local.yml`, so the copied `.env` has to drop it from
+      `COMPOSE_FILE`; and `forge status | grep -q` dies of SIGPIPE under `pipefail`,
+      the same trap as `forge profile on tools | grep`.

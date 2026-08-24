@@ -40,11 +40,22 @@ need_env() {
     [ -f .env ] || { err "No .env here. Run ./install.sh first."; exit 1; }
 }
 
+# nginx replaces apachedev rather than joining it -- they publish the same
+# 80/443 -- but apachedev is in the default set, so a plain `up -d` starts it
+# again and the two race for the port. Every start goes through here.
+# The ${a[@]+...} form is for bash 3.2 on macOS, where an empty array under
+# `set -u` is an error.
+compose_up() {
+    local extra=()
+    if is_on nginx; then extra=(--scale apachedev=0); fi
+    docker compose up -d "${extra[@]+"${extra[@]}"}" "$@"
+}
+
 pretty() { sed 's/\(.\)\(.\)/\1.\2/'; }
 
-cmd_start()   { need_env; docker compose up -d "$@"; }
+cmd_start()   { need_env; compose_up "$@"; }
 cmd_stop()    { need_env; docker compose stop "$@"; }
-cmd_restart() { need_env; docker compose up -d --force-recreate "$@"; }
+cmd_restart() { need_env; compose_up --force-recreate "$@"; }
 
 cmd_status() {
     need_env
@@ -63,7 +74,7 @@ cmd_use() {
     local v; v="$(normalise "$1")"
     sed -i "s/^PHP_VERSION=.*/PHP_VERSION=${v}/" .env
     info "Default is now PHP $(echo "$v" | pretty)"
-    docker compose up -d
+    compose_up
 }
 
 cmd_shell() {
@@ -98,9 +109,9 @@ cmd_images() {
     need_env
     case "${1:-}" in
         build)  sed -i 's/^IMAGE_MODE=.*/IMAGE_MODE=build/' .env
-                info "Images will be built locally"; docker compose up -d ;;
+                info "Images will be built locally"; compose_up ;;
         pull)   sed -i 's/^IMAGE_MODE=.*/IMAGE_MODE=missing/' .env
-                info "Images will be pulled from ghcr.io"; docker compose up -d ;;
+                info "Images will be pulled from ghcr.io"; compose_up ;;
         status|"") echo "  IMAGE_MODE=$(image_mode)" ;;
         *) err "forge images [build|pull|status]"; exit 1 ;;
     esac
@@ -179,17 +190,16 @@ cmd_profile() {
             if [ "$action" = on ]; then
                 write_profiles $keep "$name"
                 if [ "$name" = nginx ]; then
-                    docker compose stop apachedev >/dev/null 2>&1 || true
-                    warn "apachedev stopped: nginx wants the same ports"
+                    warn "apachedev goes down: nginx wants the same ports"
                 fi
-                docker compose up -d
+                compose_up
                 info "$name on   ->  $(profile_services "$name" | paste -sd', ' -)"
             else
                 write_profiles $keep
                 profile_services "$name" | while read -r svc; do
                     [ -n "$svc" ] && docker compose stop "$svc" >/dev/null 2>&1 || true
                 done
-                docker compose up -d
+                compose_up
                 if [ "$name" = nginx ]; then info "apachedev is back"; fi
                 info "$name off"
             fi

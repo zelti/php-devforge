@@ -25,8 +25,10 @@ jobs:
             docker-library/php/config_files/xdebug \
             docker-library/httpd/config_files/docker-entrypoint.sh
 
-      - name: the pty driver compiles
-        run: python3 -m py_compile .github/scripts/drive-install.py
+      - name: the helper scripts compile
+        run: |
+          python3 -m py_compile .github/scripts/drive-install.py
+          python3 -m py_compile .github/scripts/run-step.py
 
       - name: hadolint
         uses: hadolint/hadolint-action@v3.1.0

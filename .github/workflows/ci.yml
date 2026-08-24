@@ -157,16 +157,6 @@ jobs:
           # unknown versions must be refused, not passed to docker
           if forge use 9.9 2>/dev/null; then echo "9.9 should have been rejected"; exit 1; fi
 
-          # No argument means every service. Naming one narrows it -- a service, not
-          # just a PHP version, which is what sent the README to
-          # `docker compose logs` for troubleshooting.
-          timeout 5 forge logs > /tmp/all.log 2>&1 || true
-          grep -q apachedev /tmp/all.log || { echo "forge logs showed no apache"; exit 1; }
-          timeout 5 forge logs apachedev > /tmp/one.log 2>&1 || true
-          if grep -qE '^php8[0-9]dev' /tmp/one.log; then
-            echo "forge logs apachedev leaked other services"; exit 1
-          fi
-          if forge logs nope 2>/dev/null; then echo "unknown service accepted"; exit 1; fi
 
       - name: build images
         # Every PHP version is built. 8.5 broke silently once: opcache became
@@ -225,6 +215,29 @@ jobs:
 
       # Hyphens in project names were broken for a long time: mi-app--sites
       # resolved to sites/app/mi.
+      # Needs running containers, so it sits after the page is confirmed served
+      # rather than with the other forge checks, which run before the stack is up.
+      - name: forge logs reaches every container
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          # Counting distinct services, not looking for one name: compose prints
+          # logs for stopped containers too, so "apachedev appears" would pass even
+          # if the command had regressed to following a single container.
+          named() { grep -oE '^[a-z0-9]+ *\|' "$1" | tr -d ' |' | sort -u; }
+
+          timeout 5 forge logs > /tmp/all.log 2>&1 || true
+          all="$(named /tmp/all.log | wc -l)"
+          test "$all" -ge 3 || { echo "forge logs named $all services, expected the stack"; exit 1; }
+
+          # naming one narrows it to exactly that -- a service, not just a PHP
+          # version, which is what sent the README to `docker compose logs`
+          timeout 5 forge logs apachedev > /tmp/one.log 2>&1 || true
+          test "$(named /tmp/one.log)" = apachedev || {
+            echo "forge logs apachedev named: $(named /tmp/one.log | tr '\n' ' ')"; exit 1; }
+
+          if forge logs nope 2>/dev/null; then echo "unknown service accepted"; exit 1; fi
+          echo "forge logs: $all services with no argument, one when named"
+
       - name: a hyphenated project name resolves
         run: |
           curl -fsS --resolve my-app--sites.phpforge.dev:443:127.0.0.1 \

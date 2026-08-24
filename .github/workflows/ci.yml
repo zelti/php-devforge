@@ -303,6 +303,9 @@ jobs:
           mkdir -p "$DIR/sites/api/v2"
           printf '<?php echo "nested ok";' > "$DIR/sites/api/v2/index.php"
           get() { curl -fsS -k --resolve "$1.phpforge.dev:443:127.0.0.1" "https://$1.phpforge.dev/"; }
+          # The README now sends new users to the short welcome URL, so it is no
+          # longer only the long form that has to answer.
+          get welcome                  | grep -q "PHP DevForge is running"
           get my-app                   | grep -q "my-app on PHP"   # sites/ shortcut
           get v2--api                  | grep -q "nested ok"       # nested under sites/
           get public--my-app--projects | grep -q "my-app on PHP"   # full path still works

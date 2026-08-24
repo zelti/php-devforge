@@ -379,7 +379,7 @@ title "Done"
 SHORT_PROJ="${PROJ/#$HOME/\~}"
 cat <<EOF
   Start it:      forge start
-  Test page:     https://welcome--sites.${DOMAIN}
+  Test page:     https://welcome.${DOMAIN}
   Everything:    forge help
 
   Your projects live in ${SHORT_PROJ}

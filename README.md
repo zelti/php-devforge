@@ -21,6 +21,27 @@ A local PHP environment where **the folder structure is the configuration**.
 
 ## ⚡ How it works
 
+Every folder under `~/php-devforge/` is a site. The host name is its path, read from
+the inside out and joined with `--`:
+
+```
+~/php-devforge/projects/my-app/public/
+                     ↓
+https://public--my-app--projects.phpforge.dev
+```
+
+Nothing to register, nothing to restart. Create the folder, reload the browser.
+
+### Want a shorter URL?
+
+That name is honest, but long. Link the project into `sites/` and it answers on its
+own name as well:
+
+```bash
+forge link ~/php-devforge/projects/my-app/public
+→ https://my-app.phpforge.dev
+```
+
 ```
 ~/php-devforge/sites/
 ├── my-app        →  https://my-app.phpforge.dev
@@ -28,23 +49,15 @@ A local PHP environment where **the folder structure is the configuration**.
 └── api/v2        →  https://v2--api.phpforge.dev
 ```
 
-Anything under `sites/` is published, and the host name is its path — reversed and
-joined with `--` when it is nested. Nothing to register, nothing to restart. Add a
-folder, reload the browser.
-
-Publishing an existing project is one command:
-
-```bash
-forge link ~/php-devforge/projects/my-app/public
-→ https://my-app.phpforge.dev
-```
+The long URL keeps working. The short one is an extra name, not a replacement — both
+reach the same folder.
 
 **Any PHP version, per request:**
 
 ```
-https://my-app--sites.phpforge.dev          # your default
-https://my-app--sites--p83.phpforge.dev     # this request on PHP 8.3
-https://my-app--sites--p85.phpforge.dev     # this request on PHP 8.5
+https://my-app.phpforge.dev          # your default
+https://my-app--p83.phpforge.dev     # this request on PHP 8.3
+https://my-app--p85.phpforge.dev     # this request on PHP 8.5
 ```
 
 Same code, three PHP versions, no restart and no switching. Useful for checking an
@@ -88,7 +101,7 @@ cd php-devforge
 forge start
 ```
 
-Then open **https://welcome--sites.phpforge.dev**.
+Then open **https://welcome.phpforge.dev**.
 
 ## 🔧 Installation
 
@@ -134,7 +147,7 @@ Then open **https://welcome--sites.phpforge.dev**.
     ```
     Or `forge start`, which works from anywhere.
 
-    Check it works: `https://welcome--sites.phpforge.dev`
+    Check it works: `https://welcome.phpforge.dev`
 
 ## 💻 Usage
 

@@ -1183,3 +1183,64 @@ what the README explains first.
       Also worth folding in: `db_profiles()` (`bin/forge:123`) swallows errors the
       same way task 32's bug did — `2>/dev/null ... || true`. Every caller is behind
       `need_env` today, so it cannot bite, but this task rewrites that function.
+
+---
+
+## 🧪 Found while verifying task 38 against a real local stack
+
+Both surfaced from running the CI steps against running containers rather than
+reasoning about them.
+
+- [ ] **39. nginx dies when there is no certificate; Apache degrades**
+      A checkout without `certificates/php-devforge.pem` — a fresh clone, or one where
+      `install_cert.sh` was skipped — cannot run the nginx variant at all:
+
+      ```
+      nginx: [emerg] cannot load certificate "/etc/nginx/ssl/php-devforge.pem":
+             BIO_new_file() failed ... no such file
+      ```
+
+      The container restarts forever. Apache in the same state comes up fine and
+      serves over a self-signed certificate: `docker-library/httpd/Dockerfile:63`
+      installs an entrypoint that generates one into `ssl-fallback/`, and
+      `devlocal_https.conf:5-13` picks between them with `<IfFile>`. Task 7 gave
+      Apache that safety net; nginx never got it.
+
+      `docker-library/nginx/Dockerfile` has no `ENTRYPOINT` at all — only a `CMD`
+      that runs `envsubst` over the templates — so there is nowhere the fallback
+      could be generated today. `site.conf.tpl:30,53` name the certificate twice.
+
+      Wanted: the same treatment, so a missing certificate is a browser warning
+      rather than a container that will not start. Worth checking whether the two
+      entrypoints should share one script rather than growing a second copy.
+
+      CI never caught this because it runs `install_cert.sh` before the nginx step,
+      so the certificate always exists there.
+
+- [ ] **40. Two checkouts of the project fight over the same containers**
+      `COMPOSE_PROJECT_NAME=php-devforge` is a fixed literal in `.env.example:4`, so
+      every clone claims the same compose project. Seen for real with a second
+      checkout used to test a fresh install:
+
+      ```
+      NAME           STATUS        CONFIG FILES
+      php-devforge   running(7)    .../php-devforge/docker-compose.yml
+                                   .../php-devforge/docker-compose.override.yml
+                                   .../test-devforge/docker-compose.yml
+                                   .../test-devforge/docker-compose.override.yml
+      ```
+
+      Docker treats both directories as one project. Consequences, in rising order
+      of damage: `docker compose up -d` from either directory **adopts and recreates
+      the other's containers** with its own configuration; `forge stop` in one stops
+      the other; and `docker compose down -v` — a documented command — would delete
+      database volumes belonging to a checkout the person was not even in.
+
+      Cloning twice is not exotic: it is how anyone would test an upgrade without
+      touching the setup that works, which is exactly what happened here.
+
+      The ports make them genuinely exclusive anyway, so the goal is not running both
+      at once — it is that the second one refuses clearly instead of silently taking
+      the first one's containers. Options to weigh: derive the name from the checkout
+      directory, keep the literal but have the installer detect an existing project
+      pointing elsewhere and say so, or both.

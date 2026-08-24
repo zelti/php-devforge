@@ -1348,6 +1348,12 @@ reasoning about them.
       | the step fails without the fix | reverted the entrypoint, got `nginxdev is not running` |
       | the cleanup survives a failure | a `trap ... EXIT` puts the certificates back even when the step dies halfway, which the first version did not — it left every later step testing a degraded stack |
 
+      One more thing the local run could not have caught: the first version grepped
+      the issuer for `CN=phpforge.dev`, and the runner's OpenSSL prints `CN = x`
+      while this machine's prints `CN=x`. It now compares issuer to subject, which
+      is what "self-signed" actually means and does not depend on how a build
+      formats a name.
+
 - [ ] **40. Two checkouts of the project fight over the same containers**
       `COMPOSE_PROJECT_NAME=php-devforge` is a fixed literal in `.env.example:4`, so
       every clone claims the same compose project. Seen for real with a second

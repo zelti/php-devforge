@@ -539,12 +539,15 @@ jobs:
           trap 'mv /tmp/certs-aside/* certificates/ 2>/dev/null || true' EXIT
 
           # `curl -k` accepts any certificate, so it cannot tell a generated
-          # fallback from a stale file. The issuer can: a self-signed one signs
-          # itself, mkcert's does not.
-          served_by() {
-            echo | openssl s_client -connect 127.0.0.1:443 -servername "welcome.phpforge.dev" 2>/dev/null \
-              | openssl x509 -noout -issuer
+          # fallback from a stale file. Comparing issuer to subject can: a
+          # self-signed certificate signs itself, mkcert's does not. Comparing the
+          # two beats grepping for a name -- OpenSSL prints `CN = x` on some builds
+          # and `CN=x` on others, which is what broke the first version of this.
+          cert_field() {
+            echo | openssl s_client -connect 127.0.0.1:443 -servername welcome.phpforge.dev 2>/dev/null \
+              | openssl x509 -noout "-$1" | sed "s/^$1=//" | tr -d ' '
           }
+          self_signed() { [ "$(cert_field issuer)" = "$(cert_field subject)" ]; }
 
           docker compose up -d --force-recreate apachedev
           for i in $(seq 1 30); do
@@ -554,8 +557,8 @@ jobs:
           done
           curl -fsS -k --resolve welcome.phpforge.dev:443:127.0.0.1 \
             https://welcome.phpforge.dev/ | grep -q "PHP DevForge is running"
-          served_by | grep -q 'CN=phpforge.dev' || {
-            echo "apache is not serving the generated fallback: $(served_by)"; exit 1; }
+          self_signed || {
+            echo "apache is not serving a generated certificate: $(cert_field issuer)"; exit 1; }
           docker compose logs apachedev | grep -qi 'self-signed'
           echo "apache degrades"
 
@@ -569,8 +572,8 @@ jobs:
             echo "nginxdev is not running"; docker compose logs --tail=20 nginxdev; exit 1; }
           curl -fsS -k --resolve welcome.phpforge.dev:443:127.0.0.1 \
             https://welcome.phpforge.dev/ | grep -q "PHP DevForge is running"
-          served_by | grep -q 'CN=phpforge.dev' || {
-            echo "nginx is not serving the generated fallback: $(served_by)"; exit 1; }
+          self_signed || {
+            echo "nginx is not serving a generated certificate: $(cert_field issuer)"; exit 1; }
           echo "nginx degrades too"
 
           # Put it back, or later steps would be testing the wrong certificate.
@@ -582,7 +585,9 @@ jobs:
               https://welcome.phpforge.dev/ >/dev/null 2>&1 && break
             sleep 1
           done
-          served_by | grep -q 'mkcert' || { echo "the real certificate did not come back"; exit 1; }
+          if self_signed; then echo "the real certificate did not come back"; exit 1; fi
+          cert_field issuer | grep -qi mkcert || {
+            echo "unexpected issuer after restore: $(cert_field issuer)"; exit 1; }
           echo "and the real one comes back"
 
       - name: container logs on failure

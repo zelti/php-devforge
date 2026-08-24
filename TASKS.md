@@ -1129,7 +1129,22 @@ what the README explains first.
       Make `forge` the documented interface, and say once — near the top — that it
       wraps `docker compose`, so anyone who knows compose knows nothing is hidden and
       the raw commands still work. Where no `forge` equivalent exists yet, that is a
-      gap to close, not a reason to document compose.
+      gap to close, not a reason to document compose. Task 38 closed the last one, so
+      there is no exception left to write around.
+
+      **While in there, realign the subsections.** The `##` sections match one to
+      one, which is what was checked when the Spanish README was written, but the
+      `###` inside them have drifted:
+
+      | English only | Spanish only |
+      |---|---|
+      | Starting and Stopping | Xdebug |
+      | Development Workflow | |
+      | Common Issues | |
+
+      Neither is wrong, but a reader switching languages gets a different shape, and
+      whoever edits one cannot tell what the other has. Counting `##` and calling
+      them aligned is exactly what hid this.
 
 - [ ] **36. There is no uninstall**
       `install.sh` writes `.env`, generates certificates, installs a CA into the
@@ -1278,20 +1293,3 @@ reasoning about them.
       the first one's containers. Options to weigh: derive the name from the checkout
       directory, keep the literal but have the installer detect an existing project
       pointing elsewhere and say so, or both.
-
-- [ ] **41. The two READMEs organise their subsections differently**
-      The `##` sections match one to one — that was checked when the Spanish one was
-      written — but the `###` inside them have drifted:
-
-      | English only | Spanish only |
-      |---|---|
-      | Starting and Stopping | Xdebug |
-      | Development Workflow | |
-      | Common Issues | |
-
-      Neither is wrong, but a reader switching languages gets a different shape, and
-      the next person editing one will not know which subsections the other has.
-      Worth deciding on one structure and matching it, rather than checking `##`
-      counts and calling them aligned.
-
-      Noticed while adding the local-CI section, which was written into both.

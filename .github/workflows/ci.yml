@@ -356,43 +356,6 @@ jobs:
           getent hosts github.com >/dev/null || { echo "DNS broken after removal"; exit 1; }
           echo "clean"
 
-      # The reported gap: no way to see what can be turned on without opening
-      # docker-compose.override.yml. Elasticsearch is listed but deliberately not
-      # started -- the task is discoverability, and a 700MB pull buys no signal.
-      - name: forge can see and switch every profile
-        run: |
-          set -euo pipefail
-          export PATH="$HOME/.local/bin:$PATH"
-
-          forge profile list | tee /tmp/profiles.txt
-          for p in mail mariadb11 mariadb12 nginx pg16 pg17 pg18 search tools; do
-            grep -qE "^  $p +" /tmp/profiles.txt || { echo "$p is missing"; exit 1; }
-          done
-
-          grep -qE '^  pg18 +ON ' /tmp/profiles.txt          # matches COMPOSE_PROFILES
-          grep -qE '^  pg16 +off ' /tmp/profiles.txt
-          grep -q 'replaces apachedev' /tmp/profiles.txt     # the two exceptions are stated
-          grep -q 'used by forge certs' /tmp/profiles.txt
-          grep -qE '^  search +off +elasticsearch:[0-9]' /tmp/profiles.txt
-
-          test "$(forge profile list maria | wc -l)" -eq 2
-
-          # off/on through the general command, on an image the runner already has.
-          # postgres18dev is derived from compose now, not from a pg* -> postgres*dev rule.
-          forge profile off pg18
-          if docker compose ps --services | grep -qx postgres18dev; then
-            echo "postgres18dev did not stop"; exit 1
-          fi
-          forge profile on pg18
-          docker compose ps --services | grep -qx postgres18dev
-
-          if forge profile on tools; then echo "one-shot profile accepted"; exit 1; fi
-          forge profile on tools 2>&1 | grep -q 'forge certs'
-          if forge profile on nope; then echo "unknown profile accepted"; exit 1; fi
-
-          forge db list | grep -q pg18        # the wrapper still works
-          echo "every profile is visible and switchable"
-
       # Databases and mail are only useful if PHP can actually reach them, which is
       # a shared-network question rather than a compose-syntax one.
       - name: databases and mail are reachable from PHP
@@ -432,6 +395,50 @@ jobs:
           echo "mail captured and served at mail.<domain>"
 
       # nginx sat commented out and broken since the first commit precisely because
+      # The reported gap: no way to see what can be turned on without opening
+      # docker-compose.override.yml. Elasticsearch is listed but deliberately not
+      # started -- the task is discoverability, and a 700MB pull buys no signal.
+      - name: forge can see and switch every profile
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+
+          forge profile list | tee /tmp/profiles.txt
+          for p in mail mariadb11 mariadb12 nginx pg16 pg17 pg18 search tools; do
+            grep -qE "^  $p +" /tmp/profiles.txt || { echo "$p is missing"; exit 1; }
+          done
+
+          # The ON column must BE COMPOSE_PROFILES, not merely contain a name we
+          # guessed: hardcoding one coupled this to where the step sits in the job.
+          listed="$(awk '$2=="ON"{print $1}' /tmp/profiles.txt | sort | paste -sd, -)"
+          declared="$(sed -ne 's/^COMPOSE_PROFILES=//p' .env | tr ',' '\n' \
+                        | grep -v '^$' | sort | paste -sd, -)"
+          test "$listed" = "$declared" || {
+            echo "listed ON: $listed   .env says: $declared"; exit 1; }
+          grep -qE '^  pg16 +off ' /tmp/profiles.txt
+          grep -q 'replaces apachedev' /tmp/profiles.txt     # the two exceptions are stated
+          grep -q 'used by forge certs' /tmp/profiles.txt
+          grep -qE '^  search +off +elasticsearch:[0-9]' /tmp/profiles.txt
+
+          test "$(forge profile list maria | wc -l)" -eq 2
+
+          # off/on through the general command, against a container that is really
+          # running by this point, so stopping it is a real assertion.
+          # postgres18dev is derived from compose now, not from a pg* -> postgres*dev rule.
+          forge profile off pg18
+          if docker compose ps --services | grep -qx postgres18dev; then
+            echo "postgres18dev did not stop"; exit 1
+          fi
+          forge profile on pg18
+          docker compose ps --services | grep -qx postgres18dev
+
+          if forge profile on tools; then echo "one-shot profile accepted"; exit 1; fi
+          forge profile on tools 2>&1 | grep -q 'forge certs'
+          if forge profile on nope; then echo "unknown profile accepted"; exit 1; fi
+
+          forge db list | grep -q pg18        # the wrapper still works
+          echo "every profile is visible and switchable"
+
       # nothing exercised it. It is an alternative to Apache, not an addition: both
       # want ports 80 and 443.
       # Driven through forge rather than by hand: `profile on nginx` has to stop

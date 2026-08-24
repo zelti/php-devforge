@@ -62,3 +62,18 @@ profile_images() { _profile_extra images "$1" | sed 's|.*/||' | paste -sd', ' -;
 
 # pg18 -> postgres18dev ; search -> es8143dev, kibana  (one per line)
 profile_services() { _profile_extra services "$1"; }
+
+# Which directory the running containers came from, or nothing when none are
+# running. COMPOSE_PROJECT_NAME is a fixed literal, so every checkout claims the
+# same project and containers started elsewhere look like ours; compose records
+# the origin on each one.
+#
+# Goes through compose_with_env so the installer can call it too: without .env
+# the project name would fall back to the directory name and find nothing.
+active_dir() {
+    local id
+    id="$(compose_with_env ps -q 2>/dev/null | head -1)" || return 0
+    [ -n "$id" ] || return 0
+    docker inspect "$id" \
+        --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' 2>/dev/null
+}

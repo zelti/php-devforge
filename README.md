@@ -487,6 +487,38 @@ container; your IDE should listen on port **9003**.
   some shells do not have on `PATH`. Add it, or `source aliases.bash` from the project
   directory.
 
+### Two copies of the project
+
+Every checkout uses the same compose project name, so a second clone — testing an
+upgrade without touching the setup that works — does not get its own environment. It
+gets the same one:
+
+| Shared | Not shared |
+|---|---|
+| the containers | your code, in whichever folder each `.env` points at |
+| the database volumes | the `.env` itself: domain, PHP version, projects folder |
+| ports 80 and 443 | the certificates in `certificates/` |
+
+Starting from the second folder reconfigures the running containers rather than
+creating new ones. `forge` asks first, and `forge status` names the folder that
+started them:
+
+```
+[!] These containers were started from:
+      ~/Projects/other-copy
+    To go back:  cd ~/Projects/other-copy && forge start
+
+    Take them over? [y/N]
+```
+
+`forge --force <command>` skips the question, which is also what you need where
+there is no terminal to answer on.
+
+**Your code is never at risk**: it is a folder on your disk, mounted in. What the two
+folders genuinely share is the database data, which lives in a Docker volume named
+after the project rather than after the folder. `forge` has no command that deletes
+it — but `docker compose down -v`, typed by hand in either folder, reaches both.
+
 For more help, check the logs with `forge logs` — or `forge logs apachedev` for one
 service — or open an issue on GitHub.
 

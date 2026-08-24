@@ -20,7 +20,7 @@ title() { echo -e "\n${BLUE}$1${NC}"; }
 # shellcheck source=lib/menu.sh
 . ./lib/menu.sh
 
-ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0; SKIP_LINK=0
+ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0; SKIP_LINK=0; FORCE=0
 OPT_DOMAIN=""; OPT_DIR=""; OPT_PHP=""; OPT_DNS_PORT=""; OPT_IMAGES=""; OPT_PROFILES=""
 
 usage() {
@@ -35,6 +35,7 @@ Usage: $0 [OPTIONS]
   --dns-port=N          port for the local DNS (default: first free one)
   --images=pull|build   use the published images, or build your own (default: pull)
   --profiles=a,b        databases and extras to enable, e.g. pg18,mariadb12,mail
+  --force               take over containers another checkout started
   --skip-link           do not put `forge` on your PATH
   --skip-cert           do not generate certificates
   --skip-dns            do not touch the system DNS
@@ -53,6 +54,7 @@ for arg in "$@"; do
         --dns-port=*)     OPT_DNS_PORT="${arg#*=}" ;;
         --images=*)       OPT_IMAGES="${arg#*=}" ;;
         --profiles=*)     OPT_PROFILES="${arg#*=}" ;;
+        --force)          FORCE=1 ;;
         --skip-link)      SKIP_LINK=1 ;;
         --skip-cert)      SKIP_CERT=1 ;;
         --skip-dns)       SKIP_DNS=1 ;;
@@ -94,17 +96,6 @@ for p in 80 443; do
     fi
 done
 
-# ---------- current values as defaults ----------
-[ -f .env ] && { set -a +u; . ./.env; set +a -u; }
-
-DEF_DOMAIN="${DEV_DOMAIN:-phpforge.dev}"
-DEF_DIR="${PROJECTS_DIR:-$HOME/php-devforge}"
-DEF_PHP="${PHP_VERSION:-84}"
-DEF_DNS_PORT="${DNS_PORT:-}"
-case "${IMAGE_MODE:-missing}" in build) DEF_IMAGES="build" ;; *) DEF_IMAGES="pull" ;; esac
-
-valid_profile() { printf '%s\n' "$ALL_PROFILES" | grep -qx "$1"; }
-
 ask() { # prompt, default -> answer on stdout
     local prompt="$1" default="$2" answer
     if [ "$ASSUME_YES" -eq 1 ]; then echo "$default"; return; fi
@@ -118,6 +109,40 @@ confirm() { # prompt -> 0 yes / 1 no
     read -r -p "$(echo -e "  $1 [Y/n]: ")" answer </dev/tty || answer=""
     case "${answer:-y}" in [nN]*) return 1 ;; *) return 0 ;; esac
 }
+
+# Every checkout claims the same compose project, so an install here reconfigures
+# containers another directory started. Checked with the requirements, before
+# anything is written.
+OWNER="$(active_dir)"
+if [ -n "$OWNER" ] && [ "$OWNER" != "$(pwd)" ]; then
+    echo ""
+    warn "Containers for this project are already running, started from:"
+    echo "      $OWNER"
+    echo "    Installing here will reconfigure them: same containers, same"
+    echo "    databases, your code in both folders untouched."
+    echo "    To leave them alone:  cd $OWNER"
+    echo ""
+    if [ "$FORCE" -eq 1 ]; then
+        warn "Continuing (--force)"
+    elif [ ! -t 0 ]; then
+        err "No terminal to ask on. Re-run with --force to take over."
+        exit 1
+    elif ! confirm "Take them over?"; then
+        err "Left alone."
+        exit 1
+    fi
+fi
+
+# ---------- current values as defaults ----------
+[ -f .env ] && { set -a +u; . ./.env; set +a -u; }
+
+DEF_DOMAIN="${DEV_DOMAIN:-phpforge.dev}"
+DEF_DIR="${PROJECTS_DIR:-$HOME/php-devforge}"
+DEF_PHP="${PHP_VERSION:-84}"
+DEF_DNS_PORT="${DNS_PORT:-}"
+case "${IMAGE_MODE:-missing}" in build) DEF_IMAGES="build" ;; *) DEF_IMAGES="pull" ;; esac
+
+valid_profile() { printf '%s\n' "$ALL_PROFILES" | grep -qx "$1"; }
 
 title "Settings"
 DOMAIN="${OPT_DOMAIN:-$(ask "Development domain?" "$DEF_DOMAIN")}"

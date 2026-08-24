@@ -590,6 +590,67 @@ jobs:
             echo "unexpected issuer after restore: $(cert_field issuer)"; exit 1; }
           echo "and the real one comes back"
 
+      # Every checkout claims the same compose project, so a second one silently
+      # adopted and reconfigured the first one's containers. Reproduced rather than
+      # described: a real second directory, started from, then taken back.
+      - name: a second checkout cannot take over silently
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          HERE="$(pwd)"
+          # However this ends, the stack goes back to belonging here: the step
+          # after it would otherwise be testing containers from /tmp.
+          trap 'cd "$HERE" && forge --force start >/dev/null 2>&1 || true' EXIT
+
+          rm -rf /tmp/second-checkout
+          git ls-files | tar -cf - -T - | (mkdir -p /tmp/second-checkout && tar -xf - -C /tmp/second-checkout)
+          # A real second clone has only the tracked compose files: any
+          # docker-compose.local.yml is gitignored and did not come with it.
+          sed -e 's|^PROJECTS_DIR=.*|PROJECTS_DIR=/tmp/second-projects|' \
+              -e 's|^COMPOSE_FILE=.*|COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml|' \
+              .env > /tmp/second-checkout/.env
+          mkdir -p /tmp/second-projects/sites
+          (cd /tmp/second-checkout && docker compose up -d)
+
+          owner() {
+            docker inspect apachedev \
+              --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'
+          }
+          test "$(owner)" = /tmp/second-checkout || {
+            echo "the second checkout did not take the containers: $(owner)"; exit 1; }
+
+          # no terminal, no --force: it must refuse and say how
+          if forge start < /dev/null > /tmp/refused.log 2>&1; then
+            echo "forge took over without being asked"; exit 1
+          fi
+          grep -q /tmp/second-checkout /tmp/refused.log
+          grep -q -- --force /tmp/refused.log
+          test "$(owner)" = /tmp/second-checkout || { echo "it took over anyway"; exit 1; }
+
+          # status has to be able to answer "who owns these". Captured, not piped:
+          # `grep -q` closes the pipe early, forge dies of SIGPIPE, and pipefail
+          # reports 141 -- the same trap as `forge profile on tools | grep`.
+          forge status > /tmp/status.log 2>&1
+          grep -q /tmp/second-checkout /tmp/status.log
+
+          # stop is not destructive, but it is just as surprising
+          if forge stop < /dev/null >/dev/null 2>&1; then
+            echo "forge stop took over without being asked"; exit 1
+          fi
+
+          # and taking over is still one command
+          forge --force start < /dev/null > /dev/null 2>&1
+          test "$(owner)" = "$HERE" || { echo "--force did not take over: $(owner)"; exit 1; }
+
+          # with no conflict it must say nothing at all
+          forge start < /dev/null > /tmp/quiet.log 2>&1
+          if grep -q 'started from' /tmp/quiet.log; then
+            echo "warned when there was nothing to warn about"; exit 1
+          fi
+
+          rm -rf /tmp/second-checkout /tmp/second-projects
+          echo "a second checkout announces itself"
+
       - name: container logs on failure
         if: failure()
         run: docker compose logs --tail=50

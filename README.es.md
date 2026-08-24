@@ -60,8 +60,8 @@ https://mi-app--p83.phpforge.dev     # esta petición en PHP 8.3
 https://mi-app--p85.phpforge.dev     # esta petición en PHP 8.5
 ```
 
-El mismo código en tres versiones, sin reiniciar y sin cambiar nada. Útil para
-comprobar una actualización antes de comprometerte con ella.
+El mismo código en las versiones que instalaste, sin reiniciar y sin cambiar nada.
+Útil para comprobar una actualización antes de comprometerte con ella.
 
 Todo se sirve por **HTTPS real**, con un certificado en el que tu equipo confía.
 
@@ -83,7 +83,7 @@ pensado para tener muchos proyectos sobre un mismo entorno, sin configurar ningu
 
 ## 📖 Qué incluye
 
-- **Apache + PHP-FPM 8.3, 8.4 y 8.5**, los tres activos, elegidos por petición
+- **Apache + PHP-FPM 8.3, 8.4 y 8.5** — instalas las que quieras, elegidas por petición
 - **HTTPS automático** con una CA local de confianza
 - **DNS local con comodín** que solo afecta a tu dominio de desarrollo
 - **Edición en vivo** — los archivos están montados, no hay que sincronizar nada
@@ -124,14 +124,16 @@ Y abre **https://welcome.phpforge.dev**.
    ```bash
    ./install.sh
    ```
-   Pregunta por tu dominio, dónde vivirán tus proyectos y la versión de PHP por
-   defecto; busca un puerto DNS libre, detecta tu usuario, escribe `.env`, crea la
-   carpeta de proyectos, y ofrece generar los certificados y configurar el DNS.
+   Pregunta por tu dominio, dónde vivirán tus proyectos, qué versiones de PHP
+   instalar y cuál de ellas es la de por defecto; busca un puerto DNS libre, detecta
+   tu usuario, escribe `.env`, crea la carpeta de proyectos, y ofrece generar los
+   certificados y configurar el DNS.
 
    Se puede volver a ejecutar sin miedo: tu `.env` actual da los valores por defecto.
    Para uso desatendido:
    ```bash
    ./install.sh --yes --domain=midominio.dev --projects-dir=~/code
+   ./install.sh --yes --php=84,83             # dos versiones, 8.4 la de por defecto
    ./install.sh --yes --profiles=pg18,mail    # bases de datos y correo, desatendido
    ./install.sh --help                        # todas las opciones
    ```
@@ -161,7 +163,10 @@ forge restart
 forge status                 # qué corre y cómo está configurado
 
 forge link ~/code/app/public # publicar un proyecto en app.<dominio>
-forge use 8.5                # cambiar la versión por defecto
+
+forge php list               # versiones de PHP, y cuáles están instaladas
+forge php on|off 8.3         # instalar una, o liberar los ~2 GB que ocupa
+forge use 8.5                # cambiar la versión por defecto (la instala si falta)
 forge shell 8.4              # entrar a un contenedor
 forge logs 8.4               # seguir sus logs
 
@@ -241,6 +246,25 @@ ln -s ../projects/mi-app/public ~/php-devforge/sites/mi-app
 
 El enlace debe apuntar a la carpeta que contiene el `index.php` (el `public/` del
 framework). El `.htaccess` funciona: `AllowOverride All` está activado.
+
+### 🐘 Versiones de PHP
+
+Se eligen al instalar, igual que las bases de datos, porque cada una es una imagen
+aparte de unos 2 GB:
+
+```bash
+forge php list        # 8.3 off / 8.4 ON default / 8.5 off
+forge php on 8.3      # descargarla y arrancarla
+forge php off 8.3     # pararla; la imagen sigue en disco hasta que la borres
+```
+
+Una de ellas es la **de por defecto**: responde a todos los nombres de host sin
+sufijo `--pNN`. `forge use 8.5` la cambia, instalando esa versión antes si no la
+tienes, y `forge php off` se niega a quitar la de por defecto — si no, ningún
+nombre de host normal tendría quién lo atienda.
+
+Pedir una versión que no instalaste devuelve una página que lo explica y dice el
+comando para añadirla, en vez de un 503 pelado.
 
 ### 🔄 Día a día
 
@@ -407,7 +431,8 @@ las imágenes que arranca ese perfil.
 
 | Perfil | Servicios | Notas |
 |---|---|---|
-| *(ninguno)* | apachedev, php83dev, php84dev, php85dev, dnsmasq | los levanta `forge start` |
+| *(ninguno)* | apachedev, dnsmasq | los levanta `forge start` |
+| `php83` `php84` `php85` | php83dev, php84dev, php85dev | se eligen al instalar, o `forge php on 8.3` |
 | `pg16` `pg17` `pg18` | postgres | ver la sección Bases de datos y correo |
 | `mariadb11` `mariadb12` | mariadb | igual |
 | `mail` | mailpit | interfaz en `https://mail.<dominio>` |
@@ -471,6 +496,8 @@ dentro de un contenedor; tu editor debe escuchar en el puerto **9003**.
   adoptan esos ids al arrancar, así que lo que escriben es tuyo.
 - **No cambia la versión de PHP**: revisa `PHP_VERSION` en `.env`, o añade
   `--p83`/`--p84`/`--p85` al nombre del host. `forge status` muestra la de por defecto.
+- **"PHP 8.3 is not installed"**: esa versión no se eligió al instalar.
+  `forge php on 8.3` la añade; `forge php list` muestra las que tienes.
 - **`npm` muestra un aviso sobre pnpm**: es a propósito. npm sigue funcionando; aquí se
   prefiere pnpm.
 - **Un `.ini` de `custom/php.d/` parece ignorado**: recrea el contenedor con

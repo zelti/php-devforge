@@ -23,6 +23,54 @@ local function is_dir(path)
 end
 
 
+-- 83 -> 8.3
+local function pretty(v)
+    return v:sub(1, 1) .. "." .. v:sub(2)
+end
+
+-- Mirrors the Apache side: ENABLED_PROFILES is the COMPOSE_PROFILES line, so a
+-- version missing from it has no container to reach. No php entry at all means
+-- we cannot tell, and then serving as before beats refusing everything.
+local function installed_versions()
+    local enabled = ngx.var.enabled_profiles or ""
+    if not enabled:find("php%d%d") then return nil end
+    local list = {}
+    for v in enabled:gmatch("php(%d%d)") do list[#list + 1] = v end
+    table.sort(list)
+    return list
+end
+
+local function has(list, ver)
+    for _, v in ipairs(list) do if v == ver then return true end end
+    return false
+end
+
+local function not_installed_page(ver, list, default)
+    local have = {}
+    for _, v in ipairs(list) do
+        have[#have + 1] = pretty(v) .. (v == default and " (default)" or "")
+    end
+
+    ngx.status = 503
+    ngx.header.content_type = "text/html; charset=utf-8"
+    ngx.say([[<!doctype html>
+<title>PHP ]] .. pretty(ver) .. [[ is not installed</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;max-width:44rem;margin:4rem auto;padding:0 1.5rem}
+code{background:#f4f4f5;padding:.15em .4em;border-radius:.25em}
+p{color:#3f3f46}
+</style>
+<h1>PHP ]] .. pretty(ver) .. [[ is not installed</h1>
+<p><code>]] .. (ngx.var.host or "") .. [[</code> asks for PHP ]] .. pretty(ver) .. [[,
+but this environment serves ]] .. table.concat(have, ", ") .. [[.</p>
+<p>Add it:</p>
+<pre><code>forge php on ]] .. pretty(ver) .. [[</code></pre>
+<p><code>forge php list</code> shows every version this project can install.</p>
+]])
+    return ngx.exit(ngx.HTTP_OK)
+end
+
+
 local host = ngx.var.host
 local dev_domain = ngx.var.dev_domain
 local default_version = ngx.var.php_version
@@ -48,6 +96,12 @@ end
 
 version = version or default_version
 if version and version:match("^[0-9][0-9]$") then
+    -- Only for .php: a static file needs no backend, and "/" reaches here again
+    -- as /index.php through the index directive, which is where Apache checks too.
+    local installed = installed_versions()
+    if installed and ngx.var.uri:match("%.php$") and not has(installed, version) then
+        return not_installed_page(version, installed, default_version)
+    end
     ngx.var.php_backend = "php" .. version .. "dev"
 end
 

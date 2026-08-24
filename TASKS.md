@@ -1418,3 +1418,80 @@ reasoning about them.
       gitignored `docker-compose.local.yml`, so the copied `.env` has to drop it from
       `COMPOSE_FILE`; and `forge status | grep -q` dies of SIGPIPE under `pipefail`,
       the same trap as `forge profile on tools | grep`.
+
+---
+
+## 💡 Proposed while using it
+
+- [x] **41. Every PHP version is installed whether you want it or not** — FIXED
+      `php83dev`, `php84dev` and `php85dev` are in the default set, so a plain
+      install pulls **5.7 GB of PHP images** (1.9 GB each) and keeps three
+      containers running, when most people work on one version and reach for a
+      second occasionally.
+
+      Databases and mail already work the other way round — nothing starts unless
+      you pick it — and the machinery for that is built: compose profiles,
+      `COMPOSE_PROFILES`, `forge profile on|off`, and a multi-select in the
+      installer. PHP versions should be picked the same way, plus a second
+      question the databases do not need: **which one is the default**, since
+      that is what a host name without a `--pNN` suffix gets.
+
+      **The obstacle, verified rather than assumed.** `apachedev` and `nginxdev`
+      declare `depends_on: php${PHP_VERSION}dev`. Compose refuses to parse a
+      project whose dependency sits behind a disabled profile:
+
+      ```
+      service "web" depends on undefined service "php84": invalid compose project
+      ```
+
+      That is not a warning — every compose command fails, so `forge` and the
+      installer go blind with it. Keeping `depends_on` would mean the default
+      version's profile must never be absent from `COMPOSE_PROFILES`, and one bad
+      edit of `.env` bricks the tooling. Dropping `depends_on` costs only startup
+      ordering, which Apache does not need: the FPM backend is resolved per
+      request in `resolve_docroot.lua:108`.
+
+      Two more facts that shape it, both tested: `COMPOSE_PROFILES='*'` still
+      enumerates every service, so `php_versions()` can keep offering versions
+      that are not installed; and naming a profiled service starts it
+      (`docker compose up -d php83dev`), which a later plain `up -d` leaves
+      running.
+
+      **Decided with the user.** Versions are ordinary profiles and appear in
+      `forge profile list` next to `pg18`, with a `forge php list|on|off` wrapper
+      like `forge db`. `--php=84,83` installs both and the first is the default, so
+      `--php=84` keeps meaning what it meant. A request for a version that is not
+      installed gets a page that names the command to add it. An existing `.env`
+      keeps every version it had, announced once.
+
+      The invariant that makes it safe: `COMPOSE_PROFILES` always contains the
+      default version's profile. Zero `php[0-9][0-9]` entries therefore means one
+      thing only — a `.env` written before this change — which is what
+      `ensure_php_profiles()` in `bin/forge` keys off. `forge php off` refuses the
+      default, `forge use` installs what it switches to.
+
+      **Three things the local run caught before CI.**
+
+      The page cannot be written from the fixups hook where the backend is chosen.
+      A `/` reaches PHP through mod_dir's DirectoryIndex, and the internal redirect
+      throws the body away: the request ends as an empty `200` on a directory, while
+      `/index.php` was correct. It moved to `LuaHookTranslateName`, which runs before
+      mod_dir, so both paths answer the same.
+
+      Lua locals are only visible to functions defined after them. The helpers had
+      been inserted between `silly_mapper` and `set_php_handler`, so every request
+      died with `attempt to call a nil value (global 'installed_versions')` — a 500
+      on the whole site, not a subtle bug.
+
+      `paste -sd', '` alternates the two delimiters, so a third item joins with a
+      space: `8.3,8.4 8.5`. That was pre-existing in `profile_images`; three PHP
+      versions made it visible. A `commas()` helper replaced every call.
+
+      Also fixed on the way: answering "mail" to the databases prompt and yes to the
+      mail catcher wrote `mail` twice into `COMPOSE_PROFILES`.
+
+      Verified against a real stack, both servers: Apache and the nginx variant serve
+      the page for an uninstalled version and for a typo (`--p99`), the installed
+      ones keep serving, and the pty driver answers the two new questions. Each new
+      CI assertion was falsified once — the page step by blanking `ENABLED_PROFILES`,
+      the migration step by removing the call from `need_env`.

@@ -69,7 +69,6 @@ services:
       - 80:80
       - 443:443
     depends_on:
-      - php${PHP_VERSION}dev
       - dnsmasq
     volumes:
       - dataphp-devforge:/home/php-devforge:ro
@@ -80,6 +79,9 @@ services:
     environment:
       - PHP_VERSION=${PHP_VERSION}
       - DEV_DOMAIN=${DEV_DOMAIN}
+      # The setting itself, not a copy of it: resolve_docroot.lua answers a request
+      # for a version that is not installed, and a second list would drift.
+      - ENABLED_PROFILES=${COMPOSE_PROFILES:-}
     logging: *json-logging
     healthcheck:
       test: curl --fail http://localhost || exit 1
@@ -115,8 +117,8 @@ services:
     environment:
       - DEV_DOMAIN=${DEV_DOMAIN}
       - PHP_VERSION=${PHP_VERSION}
+      - ENABLED_PROFILES=${COMPOSE_PROFILES:-}
     depends_on:
-      - php${PHP_VERSION}dev
       - dnsmasq
     logging: *json-logging
     healthcheck:
@@ -126,7 +128,15 @@ services:
       start_period: 10s
       timeout: 10s
 
+  # One profile per version: each image is about 2 GB, so nothing is installed
+  # unless it is picked. COMPOSE_PROFILES always carries the default version --
+  # install.sh writes it, `forge php off` refuses to remove it.
+  #
+  # No `depends_on` on the web servers: compose refuses to parse a project whose
+  # dependency sits behind a disabled profile, and the backend is resolved per
+  # request anyway (resolve_docroot.lua).
   php83dev:
+    profiles: ["php83"]
     image: ghcr.io/zelti/php-devforge/php:8.3-dev
     pull_policy: ${IMAGE_MODE:-missing}
     container_name: php83dev
@@ -139,6 +149,7 @@ services:
     <<: *phpconfig_default
 
   php84dev:
+    profiles: ["php84"]
     image: ghcr.io/zelti/php-devforge/php:8.4-dev
     pull_policy: ${IMAGE_MODE:-missing}
     container_name: php84dev
@@ -153,6 +164,7 @@ services:
   # Adding a version is this block and nothing else: one Dockerfile serves them
   # all, and the vhosts pick the backend from the host name.
   php85dev:
+    profiles: ["php85"]
     image: ghcr.io/zelti/php-devforge/php:8.5-dev
     pull_policy: ${IMAGE_MODE:-missing}
     container_name: php85dev

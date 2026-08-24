@@ -14,6 +14,65 @@ local function is_dir(path)
 end
 
 
+-- 83 -> 8.3
+local function pretty(v)
+    return v:sub(1, 1) .. "." .. v:sub(2)
+end
+
+-- ENABLED_PROFILES is the COMPOSE_PROFILES line from .env, handed over by
+-- docker-compose.yml. Versions are installed one profile at a time, so a version
+-- that is not listed there has no container to proxy to.
+--
+-- No php entry at all means we cannot tell -- someone running compose by hand --
+-- and then it is better to proxy and fail as before than to refuse everything.
+local function installed_versions()
+    local enabled = os.getenv("ENABLED_PROFILES") or ""
+    if not enabled:find("php%d%d") then return nil end
+    local list = {}
+    for v in enabled:gmatch("php(%d%d)") do list[#list + 1] = v end
+    table.sort(list)
+    return list
+end
+
+local function has(list, ver)
+    for _, v in ipairs(list) do if v == ver then return true end end
+    return false
+end
+
+-- Answered from the translate-name hook, not from set_php_handler: a "/" reaches
+-- PHP through mod_dir's DirectoryIndex, whose internal redirect throws away a body
+-- written that late -- the request ends as an empty 200 on a directory. Translate
+-- name runs before mod_dir, so this covers "/" and /index.php alike.
+--
+-- Without it the request proxies to a host that does not resolve and Apache
+-- answers a bare 503, which says nothing about the one thing that is wrong.
+local function not_installed_page(r, ver, list)
+    local default = os.getenv("PHP_VERSION") or ""
+    local have = {}
+    for _, v in ipairs(list) do
+        have[#have + 1] = pretty(v) .. (v == default and " (default)" or "")
+    end
+
+    r.status = 503
+    r.content_type = "text/html; charset=utf-8"
+    r:puts([[<!doctype html>
+<title>PHP ]] .. pretty(ver) .. [[ is not installed</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;max-width:44rem;margin:4rem auto;padding:0 1.5rem}
+code{background:#f4f4f5;padding:.15em .4em;border-radius:.25em}
+p{color:#3f3f46}
+</style>
+<h1>PHP ]] .. pretty(ver) .. [[ is not installed</h1>
+<p><code>]] .. (r.hostname or "") .. [[</code> asks for PHP ]] .. pretty(ver) .. [[,
+but this environment serves ]] .. table.concat(have, ", ") .. [[.</p>
+<p>Add it:</p>
+<pre><code>forge php on ]] .. pretty(ver) .. [[</code></pre>
+<p><code>forge php list</code> shows every version this project can install.</p>
+]])
+    r:info("PHP " .. pretty(ver) .. " requested but not installed: " .. (r.hostname or ""))
+    return apache2.DONE
+end
+
 function silly_mapper(r)
     local dev_domain = os.getenv("DEV_DOMAIN") 
     local host = r.hostname
@@ -24,6 +83,17 @@ function silly_mapper(r)
     if not dev_domain then
         r:err("ERROR: DEV_DOMAIN environment variable not set")
         return apache2.DECLINED
+    end
+
+    -- The whole host is unusable when its PHP version is not installed, static
+    -- files included, so this is decided once here rather than per file type.
+    local installed = installed_versions()
+    if installed then
+        local ver = host:match("%-%-p([0-9][0-9])%." .. dev_domain:gsub("%.", "%%.") .. "$")
+                    or os.getenv("PHP_VERSION")
+        if ver and ver:match("^[0-9][0-9]$") and not has(installed, ver) then
+            return not_installed_page(r, ver, installed)
+        end
     end
     
     local path_only = nil

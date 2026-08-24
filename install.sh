@@ -31,7 +31,8 @@ Usage: $0 [OPTIONS]
 
   --domain=NAME         development domain (default: phpforge.dev)
   --projects-dir=PATH   where your projects live (default: ~/php-devforge)
-  --php=83|84           default PHP version (default: 84)
+  --php=84[,83,...]     PHP versions to install; the first is the default
+                        (default: 84 -- each version is about 2 GB)
   --dns-port=N          port for the local DNS (default: first free one)
   --images=pull|build   use the published images, or build your own (default: pull)
   --profiles=a,b        databases and extras to enable, e.g. pg18,mariadb12,mail
@@ -153,6 +154,12 @@ PHP_LIST="$(php_versions)" || {
     exit 1
 }
 
+# Versions already installed, so re-running the installer preselects them. Each
+# is a compose profile: php84 in COMPOSE_PROFILES means PHP 8.4 is installed.
+DEF_PHPS="$(printf '%s\n' "${COMPOSE_PROFILES:-}" | tr ',' '\n' \
+            | sed -n 's/^php\([0-9][0-9]\)$/\1/p' | paste -sd, - || true)"
+[ -n "$DEF_PHPS" ] || DEF_PHPS="$DEF_PHP"
+
 opts=()
 while read -r v; do
     [ -n "$v" ] || continue
@@ -161,14 +168,33 @@ done <<EOF
 $PHP_LIST
 EOF
 
+# --php=84,83 installs both and makes 8.4 the default, so --php=84 keeps
+# meaning what it always meant.
 if [ -n "$OPT_PHP" ]; then
-    PHPV="$OPT_PHP"
+    PHPS="${OPT_PHP//,/ }"
+    PHPV="${PHPS%% *}"
 elif [ "$ASSUME_YES" -eq 1 ] || ! menu_available; then
     echo "  Available: $(printf '%s\n' "$PHP_LIST" | sed 's/\(.\)\(.\)/\1.\2/' | paste -sd' ' -)"
-    PHPV="$(ask "Default PHP version?" "$DEF_PHP")"
+    echo "  Each version is a separate image of about 2 GB. Add more later with"
+    echo "  'forge php on 8.3'."
+    PHPS="$(ask "Which PHP versions?" "${DEF_PHPS//,/ }")"
+    PHPS="${PHPS//,/ }"
+    PHPV="$(ask "Which one is the default?" "${PHPS%% *}")"
 else
-    PHPV="$(menu_one "Default PHP version" "$DEF_PHP" "${opts[@]}")"
+    echo "  Each version is a separate image of about 2 GB."
+    PHPS="$(menu_many "PHP versions" "$DEF_PHPS" "${opts[@]}")"
+    PHPS="${PHPS//,/ }"
+    if [ "$(printf '%s\n' $PHPS | grep -c .)" -gt 1 ]; then
+        sel=()
+        for v in $PHPS; do sel+=("${v}	PHP $(echo "$v" | sed 's/\(.\)\(.\)/\1.\2/')"); done
+        PHPV="$(menu_one "Default version (answers host names with no --pNN)" \
+                "${PHPS%% *}" "${sel[@]}")"
+    else
+        PHPV="${PHPS%% *}"
+    fi
 fi
+
+PHPV="${PHPV//./}"
 
 if [ -n "$OPT_IMAGES" ]; then
     IMAGES="$OPT_IMAGES"
@@ -187,9 +213,21 @@ fi
 PROJ="${PROJ/#\~/$HOME}"
 case "$PROJ" in /*) ;; *) PROJ="$PWD/$PROJ" ;; esac
 
-printf '%s\n' "$PHP_LIST" | grep -qx "$PHPV" || {
-    err "Unknown PHP version: $PHPV"
-    echo "  available: $(printf '%s\n' "$PHP_LIST" | paste -sd' ' -)" >&2
+PHP_PROFILES=""
+for v in $PHPS; do
+    v="${v//./}"
+    printf '%s\n' "$PHP_LIST" | grep -qx "$v" || {
+        err "Unknown PHP version: $v"
+        echo "  available: $(printf '%s\n' "$PHP_LIST" | paste -sd' ' -)" >&2
+        exit 1
+    }
+    PHP_PROFILES="${PHP_PROFILES:+$PHP_PROFILES,}php$v"
+done
+[ -n "$PHP_PROFILES" ] || { err "Pick at least one PHP version."; exit 1; }
+
+# Nothing answers a host name without a --pNN suffix otherwise.
+printf '%s\n' $PHPS | tr -d . | grep -qx "$PHPV" || {
+    err "The default (${PHPV}) is not among the versions you picked: $PHPS"
     exit 1
 }
 case "$IMAGES" in
@@ -234,6 +272,11 @@ ALL_PROFILES="$(all_profiles)" || {
 
 DB_PROFILES="$(printf '%s\n' "$ALL_PROFILES" | grep -E '^(pg|mariadb)[0-9]+$' || true)"
 
+# The PHP versions live on the same COMPOSE_PROFILES line but were asked about
+# above, so they must not come back as a default here.
+DEF_EXTRAS="$(printf '%s\n' "${COMPOSE_PROFILES:-}" | tr ',' '\n' \
+              | grep -vE '^php[0-9][0-9]$' | grep -v '^$' | paste -sd, - || true)"
+
 echo "  Nothing is started unless you pick it. You can change this later with"
 echo "  'forge db on|off <name>' and 'forge mail on|off'."
 echo ""
@@ -257,7 +300,7 @@ elif [ "$ASSUME_YES" -eq 1 ] || ! menu_available; then
         [ -n "$names" ] && printf '    %-12s %s\n' "${engine%%:*}" "$names"
     done
     echo ""
-    DBS="$(ask "Which databases? (space separated, or none)" "${COMPOSE_PROFILES:-none}")"
+    DBS="$(ask "Which databases? (space separated, or none)" "${DEF_EXTRAS:-none}")"
     case "$DBS" in none|"") DBS="" ;; esac
     for d in ${DBS//,/ }; do
         [ -z "$d" ] && continue
@@ -286,8 +329,14 @@ EOF
         opts+=("mail	$(profile_images mail)  ->  mail.${DOMAIN}")
     fi
 
-    PROFILES="$(menu_many "Optional services" "${COMPOSE_PROFILES:-}" "${opts[@]}")"
+    PROFILES="$(menu_many "Optional services" "$DEF_EXTRAS" "${opts[@]}")"
 fi
+
+# The PHP versions lead the line, then the extras. Deduplicated because the two
+# questions can overlap -- answering "mail" to the databases prompt and yes to the
+# mail catcher used to write it twice.
+PROFILES_LINE="$(printf '%s\n' "${PHP_PROFILES}${PROFILES:+,$PROFILES}" \
+                 | tr ',' '\n' | grep -v '^$' | awk '!seen[$0]++' | paste -sd, - || true)"
 
 # ---------- write .env ----------
 title "Writing configuration"
@@ -300,7 +349,7 @@ sed -e "s|^DEV_DOMAIN=.*|DEV_DOMAIN=${DOMAIN}|" \
     -e "s|^PUID=.*|PUID=${PUID_V}|" \
     -e "s|^PGID=.*|PGID=${PGID_V}|" \
     -e "s|^IMAGE_MODE=.*|IMAGE_MODE=${IMAGE_MODE_V}|" \
-    -e "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${PROFILES}|" \
+    -e "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${PROFILES_LINE}|" \
     .env.example > .env
 info ".env written"
 
@@ -331,7 +380,7 @@ mkdir -p custom/php.d
 if [ ! -f custom/php.d/README.md ]; then
     cat > custom/php.d/README.md <<'INIEOF'
 Any `.ini` file here is loaded by every PHP container. No rebuild needed: edit,
-then `docker compose up -d --force-recreate php84dev`.
+then `forge restart`.
 
     ; custom/php.d/99-mine.ini
     memory_limit = 512M
@@ -406,6 +455,10 @@ cat <<EOF
   Start it:      forge start
   Test page:     https://welcome.${DOMAIN}
   Everything:    forge help
+
+  PHP $(printf '%s\n' $PHPS | tr -d . | sed 's/\(.\)\(.\)/\1.\2/' | commas) installed, $(echo "$PHPV" | sed 's/\(.\)\(.\)/\1.\2/') by default.
+  Reach another one by suffixing the host: my-app--sites--p83.${DOMAIN}
+  Add or drop versions later:  forge php list
 
   Your projects live in ${SHORT_PROJ}
 

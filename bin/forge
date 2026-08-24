@@ -205,6 +205,10 @@ cmd_images() {
 
 cmd_install() { ./install.sh "$@"; }
 
+# Delegated for the same reason as install: the script has to keep working
+# after this command's own symlink is gone.
+cmd_uninstall() { ./uninstall.sh "$@"; }
+
 # Optional services are compose profiles listed in COMPOSE_PROFILES, so `forge
 # profile` just edits that line. Nothing here enumerates them: the list comes
 # from the compose files, so adding postgres 19 means adding a service.
@@ -406,6 +410,7 @@ PHP DevForge
   forge --force <command>      take over containers another checkout started
 
   forge install [options]      set everything up (first run, or to reconfigure)
+  forge uninstall [--dry-run]  undo it: containers, images, DNS, the trusted CA
 
   forge start [service...]     start the environment
   forge stop  [service...]     stop it
@@ -440,7 +445,8 @@ FORCE=0
 if [ "${1:-}" = "--force" ]; then FORCE=1; shift; fi
 
 case "${1:-help}" in
-    install) shift; cmd_install "$@" ;;
+    install)   shift; cmd_install "$@" ;;
+    uninstall) shift; cmd_uninstall "$@" ;;
     start)   shift; cmd_start "$@" ;;
     stop)    shift; cmd_stop "$@" ;;
     restart) shift; cmd_restart "$@" ;;

@@ -1170,7 +1170,7 @@ what the README explains first.
       --profile|build` and fails. Verified locally that it fails when a violation is
       added, not just that it passes today.
 
-- [ ] **36. There is no uninstall**
+- [x] **36. There is no uninstall** — FIXED
       `install.sh` writes `.env`, generates certificates, installs a CA into the
       system trust store and the NSS stores, symlinks `forge` into `~/.local/bin`,
       creates `~/php-devforge`, and configures systemd-resolved. Undoing that today
@@ -1185,6 +1185,39 @@ what the README explains first.
       up the missing pieces: base images, 13.6 GB of build cache, and dangling
       images. An uninstall command should get those right without a person auditing
       `docker system df` afterwards.
+
+      **Decided with the user.** The work lives in `./uninstall.sh`, with
+      `forge uninstall` delegating to it the way `cmd_install` already delegates —
+      the uninstaller removes its own symlink, so it has to keep working without
+      one. Images go with `down --rmi all`; the build cache is reported, never
+      pruned, because it is shared with everything else built on the machine. The
+      database volumes and the projects folder are each a separate question,
+      answered "no" by default, and `--yes` keeps both.
+
+      Containers and volumes are found by `com.docker.compose.project` label rather
+      than by reading the compose files, so a service dropped from
+      `docker-compose.yml` — or a `COMPOSE_FILE` that no longer lists the override —
+      cannot leave anything behind. `--dry-run` prints the whole plan and touches
+      nothing.
+
+      `install_cert.sh` grew a `--remove` (it is the only file that knows the anchor
+      directory and the NSS stores), and both it and `setup-local-dns.sh --remove`
+      now check whether there is anything to remove *before* asking for sudo. Neither
+      is fatal to the uninstall: failing to get sudo prints the command to run by
+      hand and the script exits 1 saying what is still in place, rather than
+      abandoning the job halfway in silence.
+
+      **Sizes had to come from `docker images`, not `image inspect`.** With the
+      containerd image store `{{.Size}}` reports the compressed size: it said 1.7 GB
+      where Docker Desktop shows 7.2 GB, which is not a number anyone can act on.
+
+      **It found a bug in task 41.** Reinstalling this machine after the test
+      uninstall moved the default PHP version from 8.4 to 8.3: the second question
+      defaulted to the head of the picked list instead of to what `.env` already
+      said, and `forge php on` writes the list sorted. The CI step for it had to be
+      rewritten once — the first version set up the state with `--php=85,83`, where
+      the head of the list happens to be the default, so it passed against the
+      broken code too.
 
 - [x] **37. "How it works" opens with the most advanced thing in the project** — FIXED
       `README.md:22` starts with the `sites/` folder and hostnames like

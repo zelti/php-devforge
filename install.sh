@@ -160,6 +160,15 @@ DEF_PHPS="$(printf '%s\n' "${COMPOSE_PROFILES:-}" | tr ',' '\n' \
             | sed -n 's/^php\([0-9][0-9]\)$/\1/p' | paste -sd, - || true)"
 [ -n "$DEF_PHPS" ] || DEF_PHPS="$DEF_PHP"
 
+# Which version to preselect as the default, given what was picked. Re-running
+# the installer must not move the default: it answers every plain host name, and
+# "the lowest one you happen to have" is not a decision anybody made.
+default_php() { # picked versions -> the one to offer
+    local picked="$1"
+    printf '%s\n' $picked | grep -qx "$DEF_PHP" && { echo "$DEF_PHP"; return; }
+    echo "${picked%% *}"
+}
+
 opts=()
 while read -r v; do
     [ -n "$v" ] || continue
@@ -179,7 +188,7 @@ elif [ "$ASSUME_YES" -eq 1 ] || ! menu_available; then
     echo "  'forge php on 8.3'."
     PHPS="$(ask "Which PHP versions?" "${DEF_PHPS//,/ }")"
     PHPS="${PHPS//,/ }"
-    PHPV="$(ask "Which one is the default?" "${PHPS%% *}")"
+    PHPV="$(ask "Which one is the default?" "$(default_php "$PHPS")")"
 else
     echo "  Each version is a separate image of about 2 GB."
     PHPS="$(menu_many "PHP versions" "$DEF_PHPS" "${opts[@]}")"
@@ -188,7 +197,7 @@ else
         sel=()
         for v in $PHPS; do sel+=("${v}	PHP $(echo "$v" | sed 's/\(.\)\(.\)/\1.\2/')"); done
         PHPV="$(menu_one "Default version (answers host names with no --pNN)" \
-                "${PHPS%% *}" "${sel[@]}")"
+                "$(default_php "$PHPS")" "${sel[@]}")"
     else
         PHPV="${PHPS%% *}"
     fi

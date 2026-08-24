@@ -161,6 +161,26 @@ jobs:
           docker compose config --services | grep -qx php84dev
           echo "one version picked, one version installed"
 
+      # A re-run used to move the default to the lowest version picked, because
+      # the second question defaulted to the head of the list instead of to what
+      # .env already said. Caught reinstalling this machine after an uninstall.
+      - name: re-running the installer does not move the default
+        run: |
+          # The state `forge php on 8.3` leaves: the versions are sorted, so the
+          # first one is not the default. That is what used to move it.
+          sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=php83,php84/' .env
+          sed -i 's/^PHP_VERSION=.*/PHP_VERSION=84/' .env
+
+          ./install.sh --yes --skip-dns --skip-cert --skip-link >/dev/null
+          grep -q '^PHP_VERSION=84$' .env \
+            || { grep '^PHP_VERSION=' .env; echo "the default moved"; exit 1; }
+          grep -q '^COMPOSE_PROFILES=php83,php84' .env \
+            || { grep '^COMPOSE_PROFILES=' .env; echo "it dropped a version"; exit 1; }
+
+          # back to the one version the next steps expect
+          sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=php84/' .env
+          echo "the default stays where you put it"
+
       - name: .env was written
         run: |
           grep -q '^PROJECTS_DIR=' .env
@@ -744,6 +764,53 @@ jobs:
 
           rm -rf /tmp/second-checkout /tmp/second-projects
           echo "a second checkout announces itself"
+
+      # Last, because it takes the machine apart. A runner is disposable, so the
+      # real thing runs here rather than a rehearsal of it -- including the two
+      # halves that outlive the checkout: the system CA and the DNS entry.
+      - name: uninstall puts the machine back
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+          CA=/usr/local/share/ca-certificates/php-devforge-ca.crt   # Debian/Ubuntu anchor
+          test -f "$CA" || { echo "the CA was never installed; nothing to prove"; exit 1; }
+
+          # --dry-run has to be inspectable and inert
+          ./uninstall.sh --dry-run > /tmp/dry.log 2>&1
+          grep -q 'would run' /tmp/dry.log || { cat /tmp/dry.log; exit 1; }
+          test -f .env && test -f "$CA" || { echo "--dry-run changed something"; exit 1; }
+
+          ./uninstall.sh --yes --volumes
+
+          # containers, volumes, images, network
+          left="$(docker ps -a --filter label=com.docker.compose.project=php-devforge -q)"
+          test -z "$left" || { docker ps -a; echo "containers left"; exit 1; }
+          left="$(docker volume ls --filter label=com.docker.compose.project=php-devforge -q)"
+          test -z "$left" || { docker volume ls; echo "volumes left"; exit 1; }
+          left="$(docker images -q 'ghcr.io/zelti/php-devforge/*')"
+          test -z "$left" || { docker images; echo "images left"; exit 1; }
+
+          # the machine
+          test ! -e "$HOME/.local/bin/forge" || { echo "forge still linked"; exit 1; }
+          test ! -f /etc/systemd/resolved.conf.d/50-php-devforge.conf \
+            || { echo "DNS entry left"; exit 1; }
+          test ! -f "$CA" || { echo "CA still trusted"; exit 1; }
+          if command -v certutil >/dev/null 2>&1 && [ -d "$HOME/.pki/nssdb" ]; then
+            certutil -L -d "sql:$HOME/.pki/nssdb" | grep -q 'PHP DevForge' \
+              && { echo "CA still in the browser store"; exit 1; }
+          fi
+
+          # the checkout
+          test ! -f .env || { echo ".env left"; exit 1; }
+          test ! -d .caroot || { echo ".caroot left"; exit 1; }
+          test -z "$(find certificates -mindepth 1 ! -name .gitkeep)" \
+            || { ls -a certificates; echo "certificates left"; exit 1; }
+
+          # and the one thing a bad flag could destroy
+          test -f "$DIR/sites/welcome/index.php" || { echo "IT DELETED THE PROJECTS"; exit 1; }
+          test -f docker-compose.local.yml || { echo "it deleted your own override"; exit 1; }
+
+          echo "uninstalled cleanly"
 
       - name: container logs on failure
         if: failure()

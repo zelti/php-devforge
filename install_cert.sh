@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 # Generates the local certificates and trusts the CA on this machine.
+# --remove undoes the trust half, and is what ./uninstall.sh calls.
 #
 # mkcert runs inside a container, so nothing is installed on the host.
 # Only the trust step happens outside Docker: a container has its own trust
@@ -18,6 +19,107 @@ KEY_NAME="php-devforge.key"
 CA_FILE="${CAROOT_DIR}/rootCA.pem"
 NSS_NICKNAME="PHP DevForge local CA"
 # -----------------
+
+# Where this distribution keeps its CA anchors, as "dir<TAB>update-command".
+# One detection for installing and removing, so the two cannot drift apart.
+detect_anchor() {
+    if [ -d /etc/ca-certificates/trust-source/anchors ]; then
+        printf '%s\t%s\n' /etc/ca-certificates/trust-source/anchors update-ca-trust
+    elif [ -d /etc/pki/ca-trust/source/anchors ]; then
+        printf '%s\t%s\n' /etc/pki/ca-trust/source/anchors update-ca-trust
+    elif [ -d /usr/local/share/ca-certificates ]; then
+        # Debian / Ubuntu (the .crt extension is required here)
+        printf '%s\t%s\n' /usr/local/share/ca-certificates update-ca-certificates
+    fi
+}
+
+# Every NSS store on this machine. Firefox and Chrome do not read the system
+# one, so the CA has to be added -- and removed -- from each of these too.
+nss_dbs() {
+    [ -d "$HOME/.pki/nssdb" ] && echo "$HOME/.pki/nssdb"
+    for profile in "$HOME"/.mozilla/firefox/*/; do
+        [ -e "${profile}cert9.db" ] && echo "${profile%/}"
+    done
+    return 0
+}
+
+del_from_nss() {
+    local db="$1"
+    [ -d "$db" ] || return 0
+    if certutil -D -n "$NSS_NICKNAME" -d "sql:$db" >/dev/null 2>&1; then
+        echo "   ✅ removed from $db"
+    fi
+}
+
+# Undoes step 3 and step 4 below. The certificates themselves are files in the
+# checkout and are ./uninstall.sh's business, not this script's.
+do_remove() {
+    echo "🔏 Removing the PHP DevForge CA from this machine..."
+
+    case "$(uname -s)" in
+        Linux)
+            local anchor dir update target
+            anchor="$(detect_anchor)"
+            if [ -z "$anchor" ]; then
+                echo "   ⚠️  Could not detect this distribution's trust store; skipping."
+            else
+                dir="${anchor%%	*}"; update="${anchor##*	}"
+                target="${dir}/php-devforge-ca.crt"
+                if [ -f "$target" ]; then
+                    # Checked before sudo: uninstalling on a machine that never
+                    # trusted the CA should not ask for a password.
+                    echo "   Removing $target (you will be asked for your password)..."
+                    sudo rm -f "$target"
+                    sudo "$update"
+                    echo "   ✅ CA removed from the system store."
+                else
+                    echo "   Not in the system store. Nothing to do."
+                fi
+            fi
+            ;;
+        Darwin)
+            if [ -s "$CA_FILE" ]; then
+                local sha1
+                sha1=$(openssl x509 -in "$CA_FILE" -noout -fingerprint -sha1 | cut -d= -f2 | tr -d ':')
+                if security find-certificate -a -Z /Library/Keychains/System.keychain 2>/dev/null \
+                     | grep -qi "$sha1"; then
+                    echo "   Removing it from the system keychain (you will be asked for your password)..."
+                    sudo security delete-certificate -Z "$sha1" /Library/Keychains/System.keychain
+                    echo "   ✅ CA removed from the system keychain."
+                else
+                    echo "   Not in the system keychain. Nothing to do."
+                fi
+            else
+                echo "   ⚠️  $CA_FILE is gone, so the keychain entry cannot be identified."
+                echo "      Remove it by hand in Keychain Access (search: mkcert)."
+            fi
+            ;;
+        *) echo "   ⚠️  Unknown system; skipping the system store." ;;
+    esac
+
+    if command -v certutil >/dev/null 2>&1; then
+        echo "🌐 Removing it from browsers (Firefox / Chrome)..."
+        while read -r db; do
+            [ -n "$db" ] && del_from_nss "$db"
+        done <<EOF
+$(nss_dbs)
+EOF
+    fi
+
+    echo ""
+    echo "✅ Done. Restart your browser for it to stop trusting the old CA."
+}
+
+case "${1:-}" in
+    --remove) do_remove; exit 0 ;;
+    -h|--help)
+        echo "Usage: $0 [--remove]"
+        echo "  no options   generate the certificates and trust the CA"
+        echo "  --remove     stop trusting the CA (system store and browsers)"
+        exit 0 ;;
+    "") ;;
+    *) echo "❌ Unknown option: $1"; exit 1 ;;
+esac
 
 echo "🔐 Setting up local certificates for PHP DevForge..."
 
@@ -85,15 +187,9 @@ install_ca_linux() {
 echo "🔏 Trusting the certificate authority on this machine..."
 case "$(uname -s)" in
     Linux)
-        if [ -d /etc/ca-certificates/trust-source/anchors ]; then
-            # Arch and derivatives
-            install_ca_linux /etc/ca-certificates/trust-source/anchors update-ca-trust
-        elif [ -d /etc/pki/ca-trust/source/anchors ]; then
-            # Fedora / RHEL / openSUSE
-            install_ca_linux /etc/pki/ca-trust/source/anchors update-ca-trust
-        elif [ -d /usr/local/share/ca-certificates ]; then
-            # Debian / Ubuntu (the .crt extension is required here)
-            install_ca_linux /usr/local/share/ca-certificates update-ca-certificates
+        ANCHOR="$(detect_anchor)"
+        if [ -n "$ANCHOR" ]; then
+            install_ca_linux "${ANCHOR%%	*}" "${ANCHOR##*	}"
         else
             echo "   ⚠️  Could not detect this distribution's trust store."
             echo "      Install it manually: $CA_FILE"
@@ -130,10 +226,11 @@ add_to_nss() {
 
 if command -v certutil >/dev/null 2>&1; then
     echo "🌐 Adding the CA to browsers (Firefox / Chrome)..."
-    add_to_nss "$HOME/.pki/nssdb"
-    for profile in "$HOME"/.mozilla/firefox/*/; do
-        [ -e "${profile}cert9.db" ] && add_to_nss "${profile%/}"
-    done
+    while read -r db; do
+        [ -n "$db" ] && add_to_nss "$db"
+    done <<EOF
+$(nss_dbs)
+EOF
 else
     echo "🌐 certutil is not installed: skipping Firefox/Chrome."
     echo "   If you use Firefox, install 'nss' (Arch) or 'libnss3-tools' (Debian) and run again."

@@ -137,8 +137,11 @@ do_install() {
 
 # No require_domain: undoing has to work when .env is already gone, which is
 # exactly the state you are in while cleaning up.
+# require_sudo is asked for inside each branch, after checking there is
+# something to remove: ./uninstall.sh calls this on machines that never
+# configured DNS, and asking for a password to then say "nothing to do" is
+# both rude and, with no terminal, fatal.
 do_remove() {
-    require_sudo
     case "$(detect_backend)" in
         macos)
             if [ -z "$DEV_DOMAIN" ]; then
@@ -147,6 +150,7 @@ do_remove() {
                 exit 1
             fi
             if [ -f "/etc/resolver/${DEV_DOMAIN}" ]; then
+                require_sudo
                 sudo rm -f "/etc/resolver/${DEV_DOMAIN}"
                 sudo dscacheutil -flushcache
                 sudo killall -HUP mDNSResponder 2>/dev/null || true
@@ -157,6 +161,7 @@ do_remove() {
             ;;
         resolved)
             if [ -f "$RESOLVED_CONF" ]; then
+                require_sudo
                 sudo rm -f "$RESOLVED_CONF"
                 sudo systemctl restart systemd-resolved
                 info "✓ Removed $RESOLVED_CONF"

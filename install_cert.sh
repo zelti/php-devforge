@@ -141,4 +141,4 @@ fi
 
 echo ""
 echo "🎉 Done. Restart your browser so it picks up the new CA."
-echo "   Start the environment with: docker compose up -d"
+echo "   Start the environment with: forge start"

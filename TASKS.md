@@ -1106,7 +1106,7 @@ what the README explains first.
       keypresses, so adding a database cannot silently break it — the first version
       did count, and would have.
 
-- [ ] **34. The installer's last words send you to `docker compose`, not `forge`**
+- [x] **34. The installer's last words send you to `docker compose`, not `forge`** — FIXED
       It ends with:
 
       ```
@@ -1121,7 +1121,7 @@ what the README explains first.
       that one already ends with `forge start`. The installer calls the certificate
       script last, so its closing line is what you actually read.
 
-- [ ] **35. The README teaches `docker compose` in 11 places**
+- [x] **35. The README teaches `docker compose` in 11 places** — FIXED
       Same problem, wider. `README.md` lines 133, 269, 318, 322, 368, 401, 433, 436,
       439 and the Spanish equivalents reach for compose where a `forge` subcommand
       exists.
@@ -1145,6 +1145,30 @@ what the README explains first.
       Neither is wrong, but a reader switching languages gets a different shape, and
       whoever edits one cannot tell what the other has. Counting `##` and calling
       them aligned is exactly what hid this.
+
+      Done together. Every `docker compose` instruction is now a `forge` command in
+      both languages; the two that remain are prose, not instructions — the sentence
+      saying `forge` wraps compose, and the one describing what CI validates.
+
+      The pass needed one more command. `forge logs` followed a single PHP container,
+      so troubleshooting still sent you to `docker compose logs`; naming a container
+      is not something you can do when you do not yet know what broke. No argument now
+      means every service, and an argument can be a service as well as a version.
+
+      The subsections were worse than the heading list suggested. English was missing
+      the `xdebug` commands entirely; Spanish was missing three troubleshooting entries
+      and had no subsection for its command block. Both now carry the union, in the
+      same order, so the two files are translations rather than variants.
+
+      Also switched to `forge` where the READMEs called the scripts directly:
+      `forge dns setup|status|test|remove` and `forge certs`, each noting the script
+      still works. And the stale "Aliases not working" entry became
+      `forge: command not found`, which is the thing people actually hit — the aliases
+      it referred to were removed when `forge` replaced them.
+
+      CI guards it: a lint step greps both READMEs for `docker compose up|logs|stop|
+      --profile|build` and fails. Verified locally that it fails when a violation is
+      added, not just that it passes today.
 
 - [ ] **36. There is no uninstall**
       `install.sh` writes `.env`, generates certificates, installs a CA into the

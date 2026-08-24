@@ -21,6 +21,27 @@ Un entorno PHP local donde **la estructura de carpetas es la configuración**.
 
 ## ⚡ Cómo funciona
 
+Cada carpeta bajo `~/php-devforge/` es un sitio. El nombre del host es su ruta, leída
+de dentro hacia fuera y unida con `--`:
+
+```
+~/php-devforge/projects/mi-app/public/
+                     ↓
+https://public--mi-app--projects.phpforge.dev
+```
+
+No hay nada que registrar ni que reiniciar. Creas la carpeta y recargas el navegador.
+
+### ¿Quieres una URL más corta?
+
+Ese nombre es honesto, pero largo. Enlaza el proyecto en `sites/` y responderá también
+con su propio nombre:
+
+```bash
+forge link ~/php-devforge/projects/mi-app/public
+→ https://mi-app.phpforge.dev
+```
+
 ```
 ~/php-devforge/sites/
 ├── mi-app        →  https://mi-app.phpforge.dev
@@ -28,23 +49,15 @@ Un entorno PHP local donde **la estructura de carpetas es la configuración**.
 └── api/v2        →  https://v2--api.phpforge.dev
 ```
 
-Todo lo que esté bajo `sites/` está publicado, y el nombre del host es su ruta —
-invertida y unida con `--` cuando está anidada. No hay nada que registrar ni que
-reiniciar. Creas una carpeta y recargas el navegador.
-
-Publicar un proyecto que ya tienes es un comando:
-
-```bash
-forge link ~/php-devforge/projects/mi-app/public
-→ https://mi-app.phpforge.dev
-```
+La URL larga sigue funcionando. La corta es un nombre de más, no un reemplazo: las dos
+llegan a la misma carpeta.
 
 **Cualquier versión de PHP, por petición:**
 
 ```
-https://mi-app--sites.phpforge.dev          # tu versión por defecto
-https://mi-app--sites--p83.phpforge.dev     # esta petición en PHP 8.3
-https://mi-app--sites--p85.phpforge.dev     # esta petición en PHP 8.5
+https://mi-app.phpforge.dev          # tu versión por defecto
+https://mi-app--p83.phpforge.dev     # esta petición en PHP 8.3
+https://mi-app--p85.phpforge.dev     # esta petición en PHP 8.5
 ```
 
 El mismo código en tres versiones, sin reiniciar y sin cambiar nada. Útil para
@@ -88,7 +101,7 @@ cd php-devforge
 forge start
 ```
 
-Y abre **https://welcome--sites.phpforge.dev**.
+Y abre **https://welcome.phpforge.dev**.
 
 ## 🔧 Instalación
 
@@ -135,7 +148,7 @@ Y abre **https://welcome--sites.phpforge.dev**.
    ```bash
    forge start
    ```
-   Comprueba que funciona: `https://welcome--sites.phpforge.dev`
+   Comprueba que funciona: `https://welcome.phpforge.dev`
 
 ## 💻 Uso
 

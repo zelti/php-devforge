@@ -1186,7 +1186,7 @@ what the README explains first.
       images. An uninstall command should get those right without a person auditing
       `docker system df` afterwards.
 
-- [ ] **37. "How it works" opens with the most advanced thing in the project**
+- [x] **37. "How it works" opens with the most advanced thing in the project** — FIXED
       `README.md:22` starts with the `sites/` folder and hostnames like
       `v2--api.phpforge.dev` — path segments reversed and joined with `--` — before
       saying what the basic rule is. It also shows `my-app.phpforge.dev` there and
@@ -1196,6 +1196,34 @@ what the README explains first.
       Lead with the plain rule: a folder becomes a URL, nothing to register or
       restart. Then introduce `sites/` as what it is — the shortcut you reach for
       when you want a cleaner URL — rather than as the way it works.
+
+      Done. The section now opens with the rule and the URL it actually produces —
+      `projects/my-app/public` → `public--my-app--projects` — and a new subsection,
+      *Want a shorter URL?*, carries `forge link` and the `sites/` tree. Long first is
+      deliberate: it is what makes the shortcut worth reading about.
+
+      The two spellings were the sharper half and were not in the report. The PHP
+      version block used `my-app--sites--p83`, a third name for a site the reader had
+      just met twice. It now uses `my-app--p83`, and the section says plainly that
+      both URLs reach the same folder — which is what `resolve_docroot.lua:73-79`
+      does: try `sites/<path>`, fall back to the full path.
+
+      Also switched the first URL a new user opens, in both READMEs and
+      `install.sh`, from `welcome--sites` to `welcome`. Sending someone to the long
+      form before they have read the rule is the same mistake in miniature.
+
+      **Every URL the section prints was checked against a running stack**, which is
+      how the two-spellings problem should have been caught the first time:
+
+      ```
+      public--my-app--projects  ->  my-app on PHP 8.4.24
+      my-app                    ->  my-app on PHP 8.4.24
+      my-app--p83               ->  my-app on PHP 8.3.33
+      welcome                   ->  PHP DevForge is running
+      ```
+
+      CI keeps the long forms asserted — the claim that both work is only true while
+      both are tested — and gains `welcome` alongside them.
 
 - [x] **38. Profiles are not discoverable from the command line** — FIXED
       `forge help` and `forge db list` both already exist, which is its own evidence

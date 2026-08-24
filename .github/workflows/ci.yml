@@ -19,7 +19,8 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck --severity=warning \
-            install.sh install_cert.sh setup-local-dns.sh aliases.bash lib/menu.sh \
+            install.sh install_cert.sh setup-local-dns.sh aliases.bash \
+            lib/menu.sh lib/compose.sh bin/forge \
             docker-library/php/config_files/docker-php-entrypoint \
             docker-library/php/config_files/xdebug \
             docker-library/httpd/config_files/docker-entrypoint.sh
@@ -394,13 +395,70 @@ jobs:
           echo "mail captured and served at mail.<domain>"
 
       # nginx sat commented out and broken since the first commit precisely because
+      # The reported gap: no way to see what can be turned on without opening
+      # docker-compose.override.yml. Elasticsearch is listed but deliberately not
+      # started -- the task is discoverability, and a 700MB pull buys no signal.
+      - name: forge can see and switch every profile
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+
+          forge profile list | tee /tmp/profiles.txt
+          for p in mail mariadb11 mariadb12 nginx pg16 pg17 pg18 search tools; do
+            grep -qE "^  $p +" /tmp/profiles.txt || { echo "$p is missing"; exit 1; }
+          done
+
+          # The ON column must BE COMPOSE_PROFILES, not merely contain a name we
+          # guessed: hardcoding one coupled this to where the step sits in the job.
+          listed="$(awk '$2=="ON"{print $1}' /tmp/profiles.txt | sort | paste -sd, -)"
+          declared="$(sed -ne 's/^COMPOSE_PROFILES=//p' .env | tr ',' '\n' \
+                        | grep -v '^$' | sort | paste -sd, -)"
+          test "$listed" = "$declared" || {
+            echo "listed ON: $listed   .env says: $declared"; exit 1; }
+          grep -qE '^  pg16 +off ' /tmp/profiles.txt
+          grep -q 'replaces apachedev' /tmp/profiles.txt     # the two exceptions are stated
+          grep -q 'used by forge certs' /tmp/profiles.txt
+          grep -qE '^  search +off +elasticsearch:[0-9]' /tmp/profiles.txt
+
+          test "$(forge profile list maria | wc -l)" -eq 2
+
+          # off/on through the general command, against a container that is really
+          # running by this point, so stopping it is a real assertion.
+          # postgres18dev is derived from compose now, not from a pg* -> postgres*dev rule.
+          forge profile off pg18
+          if docker compose ps --services | grep -qx postgres18dev; then
+            echo "postgres18dev did not stop"; exit 1
+          fi
+          forge profile on pg18
+          docker compose ps --services | grep -qx postgres18dev
+
+          # Captured, not piped: forge exits 1 here by design, and under pipefail
+          # a pipeline reports the leftmost failure -- so `forge ... | grep` fails
+          # even when grep finds what it was looking for.
+          out="$(forge profile on tools 2>&1 || true)"
+          printf '%s\n' "$out" | grep -q 'forge certs'
+          if forge profile on tools >/dev/null 2>&1; then
+            echo "a one-shot profile was accepted"; exit 1
+          fi
+          if forge profile on nope; then echo "unknown profile accepted"; exit 1; fi
+
+          forge db list | grep -q pg18        # the wrapper still works
+          echo "every profile is visible and switchable"
+
       # nothing exercised it. It is an alternative to Apache, not an addition: both
       # want ports 80 and 443.
+      # Driven through forge rather than by hand: `profile on nginx` has to stop
+      # apachedev, since both publish 80/443, and `off` has to bring it back. That
+      # is the one case where turning something on turns something else off.
       - name: the nginx variant serves the same sites
         run: |
+          export PATH="$HOME/.local/bin:$PATH"
           docker compose build nginxdev
-          docker compose stop apachedev
-          docker compose --profile nginx up -d nginxdev
+          forge profile on nginx
+          docker compose ps --services | grep -qx nginxdev
+          if docker compose ps --services | grep -qx apachedev; then
+            echo "apachedev is still up; nginx cannot have the ports"; exit 1
+          fi
           for i in $(seq 1 30); do
             curl -fsS --max-time 5 -k --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
               https://welcome--sites.phpforge.dev/ >/dev/null 2>&1 && break
@@ -417,8 +475,8 @@ jobs:
             printf '%s' "$body" | grep -q '<?php' && { echo "SOURCE LEAK on $h"; exit 1; }
           done
           echo "nginx ok"
-          docker compose stop nginxdev
-          docker compose up -d apachedev
+          forge profile off nginx
+          docker compose ps --services | grep -qx apachedev
 
       - name: container logs on failure
         if: failure()

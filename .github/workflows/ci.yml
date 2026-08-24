@@ -86,7 +86,8 @@ jobs:
           # reproduce the bug: --profiles bypassed validation entirely, so this
           # passed even while every typed name was being rejected.
           ./install.sh --yes --skip-dns --skip-cert --skip-link --profiles=pg18,mail >/dev/null
-          grep -q '^COMPOSE_PROFILES=pg18,mail$' .env
+          # The default PHP version leads the line: versions are profiles too.
+          grep -q '^COMPOSE_PROFILES=php84,pg18,mail$' .env
           rm -f .env .env.backup
 
           # a name that does not must stop a scripted install, not write a dead profile
@@ -145,7 +146,13 @@ jobs:
       # each. What is not picked must not reach the default set at all.
       - name: only the PHP versions you picked are installed
         run: |
-          grep -q '^COMPOSE_PROFILES=php84$' .env
+          # Not an exact match on the line: --yes also accepts the mail catcher.
+          grep -qE '^COMPOSE_PROFILES=php84(,|$)' .env \
+            || { grep '^COMPOSE_PROFILES=' .env; exit 1; }
+          if grep '^COMPOSE_PROFILES=' .env | grep -qE 'php(83|85)'; then
+            echo "a version nobody asked for was enabled"
+            grep '^COMPOSE_PROFILES=' .env; exit 1
+          fi
           for s in php83dev php85dev; do
             if docker compose config --services | grep -qx "$s"; then
               echo "$s starts by default and should not"; exit 1

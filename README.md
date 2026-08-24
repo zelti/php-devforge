@@ -451,6 +451,38 @@ CI builds all three PHP versions, runs the installer, configures DNS, checks tha
 you, and that both Apache and nginx serve the same sites. If it is green, it works
 somewhere other than your laptop.
 
+### Running a CI step before you push
+
+A round trip through GitHub is six minutes, and most failures are not in the code
+but in the step itself: a flag you passed locally and CI does not, a value an
+earlier step was supposed to set, a pipeline that behaves differently under
+`pipefail`. So run the step as written instead of retyping it:
+
+```bash
+forge start                                   # the steps need the stack up
+
+.github/scripts/run-step.py                   # list every step
+.github/scripts/run-step.py "the forge command works"
+.github/scripts/run-step.py -x "<name>"       # trace, to find the silent grep
+```
+
+It reads `.github/workflows/ci.yml` and runs the step's `run:` block verbatim
+under `bash -e`, exactly as GitHub does. Needs PyYAML; it tells you how to
+install it if you do not have it.
+
+**Steps are not independent.** Some read fixtures an earlier step created — the
+`my-app` project, an enabled database — so when one fails on a missing file, run
+the earlier step first. `run-step.py` with no arguments lists them in order.
+
+**Two kinds of step cannot pass locally**, and that is expected:
+
+| Step | Why | To run it anyway |
+|---|---|---|
+| the HTTPS ones | `curl` without `-k`, on purpose: it checks the system trust store | `./install_cert.sh` (asks for sudo, installs the CA) |
+| the DNS ones | they rewrite the system resolver | `./setup-local-dns.sh` (asks for sudo) |
+
+Everything else runs against your own containers.
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

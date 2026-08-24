@@ -449,6 +449,39 @@ comprueba que un `.php` nunca se sirve como código fuente, que los archivos cre
 en los contenedores son tuyos, y que Apache y nginx sirven lo mismo. Si está en
 verde, funciona en una máquina que no es la tuya.
 
+### Ejecutar un paso de la CI antes de subir
+
+Una vuelta por GitHub son seis minutos, y la mayoría de los fallos no están en el
+código sino en el propio paso: una bandera que pasas en local y la CI no, un valor
+que debía dejar listo un paso anterior, una tubería que se comporta distinto bajo
+`pipefail`. Así que ejecuta el paso tal como está escrito, en vez de reescribirlo:
+
+```bash
+forge start                                   # los pasos necesitan la pila arriba
+
+.github/scripts/run-step.py                   # lista todos los pasos
+.github/scripts/run-step.py "the forge command works"
+.github/scripts/run-step.py -x "<nombre>"     # traza, para cazar el grep silencioso
+```
+
+Lee `.github/workflows/ci.yml` y ejecuta el bloque `run:` del paso verbatim bajo
+`bash -e`, igual que GitHub. Necesita PyYAML; si no lo tienes, te dice cómo
+instalarlo.
+
+**Los pasos no son independientes.** Algunos leen cosas que creó un paso anterior
+—el proyecto `my-app`, una base de datos encendida—, así que si uno falla por un
+archivo que no existe, ejecuta antes el que lo crea. `run-step.py` sin argumentos
+los lista en orden.
+
+**Dos tipos de paso no pueden pasar en local**, y es lo esperado:
+
+| Paso | Por qué | Para ejecutarlo igual |
+|---|---|---|
+| los de HTTPS | `curl` sin `-k`, a propósito: comprueba el almacén de confianza del sistema | `./install_cert.sh` (pide sudo, instala la CA) |
+| los de DNS | reescriben el resolutor del sistema | `./setup-local-dns.sh` (pide sudo) |
+
+Todo lo demás corre contra tus propios contenedores.
+
 ## 📄 Licencia
 
 MIT — ver [LICENSE](LICENSE).

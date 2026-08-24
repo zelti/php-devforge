@@ -1278,3 +1278,20 @@ reasoning about them.
       the first one's containers. Options to weigh: derive the name from the checkout
       directory, keep the literal but have the installer detect an existing project
       pointing elsewhere and say so, or both.
+
+- [ ] **41. The two READMEs organise their subsections differently**
+      The `##` sections match one to one — that was checked when the Spanish one was
+      written — but the `###` inside them have drifted:
+
+      | English only | Spanish only |
+      |---|---|
+      | Starting and Stopping | Xdebug |
+      | Development Workflow | |
+      | Common Issues | |
+
+      Neither is wrong, but a reader switching languages gets a different shape, and
+      the next person editing one will not know which subsections the other has.
+      Worth deciding on one structure and matching it, rather than checking `##`
+      counts and calling them aligned.
+
+      Noticed while adding the local-CI section, which was written into both.

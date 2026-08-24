@@ -9,24 +9,20 @@ set -euo pipefail
 FORGE_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 cd "$FORGE_DIR"
 
+# shellcheck source=lib/compose.sh
+. ./lib/compose.sh
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info() { echo -e "${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
-# PHP versions come from the compose file, so adding php86dev is all it takes for
-# `forge use 8.6` to work. Nothing here enumerates them.
-versions() {
-    docker compose config --services 2>/dev/null \
-        | sed -n 's/^php\([0-9][0-9]\)dev$/\1/p' | sort
-}
-
 # Accepts 8.5 or 85; returns the compact form.
 normalise() {
     local v="${1//./}"
-    if ! printf '%s\n' "$(versions)" | grep -qx "$v"; then
+    if ! printf '%s\n' "$(php_versions)" | grep -qx "$v"; then
         err "Unknown PHP version: $1"
-        echo "  available: $(versions | sed 's/\(.\)\(.\)/\1.\2/' | tr '\n' ' ')" >&2
+        echo "  available: $(php_versions | sed 's/\(.\)\(.\)/\1.\2/' | tr '\n' ' ')" >&2
         exit 1
     fi
     echo "$v"
@@ -87,18 +83,13 @@ cmd_logs() {
 
 cmd_mail() {
     need_env
-    local keep; keep="$(enabled_profiles | grep -vx mail || true)"
     case "${1:-status}" in
-        on)  write_profiles $keep mail
-             docker compose up -d
+        on)  cmd_profile on mail
              info "Mail catcher at https://mail.$(sed -ne 's/^DEV_DOMAIN=//p' .env)"
              echo "  Point your app's SMTP at mailpit:1025 (no auth, no TLS)" ;;
-        off) write_profiles $keep
-             docker compose stop mailpit 2>/dev/null || true
-             docker compose up -d
-             info "Mail catcher off" ;;
+        off) cmd_profile off mail ;;
         status|"")
-             if enabled_profiles | grep -qx mail; then echo "  mail: ON"; else echo "  mail: off"; fi ;;
+             if is_on mail; then echo "  mail: ON"; else echo "  mail: off"; fi ;;
         *) err "forge mail [on|off|status]"; exit 1 ;;
     esac
 }
@@ -117,12 +108,30 @@ cmd_images() {
 
 cmd_install() { ./install.sh "$@"; }
 
-# Databases are compose profiles listed in COMPOSE_PROFILES, so `forge db` just
-# edits that line. Nothing here enumerates them: the list comes from the compose
-# files, so adding postgres 19 means adding a service and nothing else.
-db_profiles() {
-    docker compose config --profiles 2>/dev/null \
-        | grep -E '^(pg[0-9]+|mariadb[0-9]+)$' | sort || true
+# Optional services are compose profiles listed in COMPOSE_PROFILES, so `forge
+# profile` just edits that line. Nothing here enumerates them: the list comes
+# from the compose files, so adding postgres 19 means adding a service.
+profile_list() {
+    local out; out="$(all_profiles)" || {
+        err "Could not read the compose profiles."
+        echo "  Check it by hand:  docker compose config --profiles" >&2
+        exit 1
+    }
+    printf '%s\n' "$out"
+}
+
+db_profiles() { profile_list | grep -E '^(pg[0-9]+|mariadb[0-9]+)$' || true; }
+
+is_on() { enabled_profiles | grep -qx "$1"; }
+
+# Two profiles are not plain add-ons, and saying so beats parsing YAML for it:
+# nginx publishes the same 80/443 as apachedev (docker-compose.yml:69,109), and
+# tools is a one-shot mkcert run with nothing left running afterwards.
+profile_note() {
+    case "$1" in
+        nginx) echo "replaces apachedev" ;;
+        tools) echo "used by forge certs" ;;
+    esac
 }
 
 enabled_profiles() {
@@ -138,42 +147,76 @@ write_profiles() {
     fi
 }
 
+cmd_profile() {
+    need_env
+    local action="${1:-list}" name="${2:-}"
+    case "$action" in
+        list)
+            local filter="${2:-}" state note
+            compose_cache        # one read; the subshells below inherit it
+            profile_list | while read -r p; do
+                [ -n "$p" ] || continue
+                case "$p" in *"$filter"*) ;; *) continue ;; esac
+                if [ "$p" = tools ]; then state="-"
+                elif is_on "$p";  then state="ON"
+                else                   state="off"; fi
+                note="$(profile_note "$p")"
+                printf '  %-11s %-4s %-42s %s\n' "$p" "$state" "$(profile_images "$p")" "$note"
+            done
+            ;;
+        on|off)
+            [ -n "$name" ] || { err "which one? try: forge profile list"; exit 1; }
+            profile_list | grep -qx "$name" || {
+                err "Unknown profile: $name"
+                echo "  available: $(profile_list | paste -sd' ' -)" >&2; exit 1; }
+
+            if [ "$name" = tools ] && [ "$action" = on ]; then
+                err "'tools' runs mkcert once and exits; there is nothing to keep on."
+                echo "  You want:  forge certs" >&2; exit 1
+            fi
+
+            local keep; keep="$(enabled_profiles | grep -vx "$name" || true)"
+            if [ "$action" = on ]; then
+                write_profiles $keep "$name"
+                if [ "$name" = nginx ]; then
+                    docker compose stop apachedev >/dev/null 2>&1 || true
+                    warn "apachedev stopped: nginx wants the same ports"
+                fi
+                docker compose up -d
+                info "$name on   ->  $(profile_services "$name" | paste -sd', ' -)"
+            else
+                write_profiles $keep
+                profile_services "$name" | while read -r svc; do
+                    [ -n "$svc" ] && docker compose stop "$svc" >/dev/null 2>&1 || true
+                done
+                docker compose up -d
+                if [ "$name" = nginx ]; then info "apachedev is back"; fi
+                info "$name off"
+            fi
+            ;;
+        *) err "forge profile [list [filter]|on <name>|off <name>]"; exit 1 ;;
+    esac
+}
+
+# Kept because they read well, and the installer and READMEs already name them.
 cmd_db() {
     need_env
     local action="${1:-list}" name="${2:-}"
     case "$action" in
         list)
-            local on; on="$(enabled_profiles | tr '\n' ' ')"
-            echo "  available:"
             db_profiles | while read -r p; do
-                case " $on " in *" $p "*) echo "    $p  ON" ;; *) echo "    $p  off" ;; esac
+                [ -n "$p" ] || continue
+                if is_on "$p"; then echo "    $p  ON"; else echo "    $p  off"; fi
             done
             ;;
         on|off)
             [ -n "$name" ] || { err "which one? try: forge db list"; exit 1; }
             db_profiles | grep -qx "$name" || {
                 err "Unknown database: $name"
-                echo "  available: $(db_profiles | tr '\n' ' ')" >&2; exit 1; }
-            local keep; keep="$(enabled_profiles | grep -vx "$name" || true)"
-            if [ "$action" = "on" ]; then
-                write_profiles $keep "$name"; info "$name enabled"
-            else
-                write_profiles $keep
-                docker compose stop "$(compose_service "$name")" 2>/dev/null || true
-                info "$name disabled"
-            fi
-            docker compose up -d
+                echo "  available: $(db_profiles | paste -sd' ' -)" >&2; exit 1; }
+            cmd_profile "$action" "$name"
             ;;
         *) err "forge db [list|on <name>|off <name>]"; exit 1 ;;
-    esac
-}
-
-# pg18 -> postgres18dev, mariadb12 -> mariadb12dev
-compose_service() {
-    case "$1" in
-        pg*)      echo "postgres${1#pg}dev" ;;
-        mariadb*) echo "${1}dev" ;;
-        *)        echo "$1" ;;
     esac
 }
 
@@ -242,15 +285,18 @@ PHP DevForge
 
   forge link <folder> [name]   publish a project: symlinks it under sites/
 
-  forge db list                which databases exist, and which are on
-  forge db on|off <name>       turn one on or off
+  forge profile list [filter]  every optional service, what it starts, what is on
+  forge profile on|off <name>  turn one on or off
+
+  forge db list                the databases among them
+  forge db on|off <name>       same thing, filtered to databases
   forge mail on|off            a mail catcher at mail.<domain>
 
   forge images build|pull      build images locally, or use the published ones
   forge certs                  regenerate the HTTPS certificates
   forge dns [setup|status|test|remove]
 
-Versions available here: $(versions | pretty | tr '\n' ' ')
+Versions available here: $(php_versions | pretty | tr '\n' ' ')
 Version arguments accept either form: 8.5 or 85.
 EOF
 }
@@ -265,6 +311,7 @@ case "${1:-help}" in
     shell)   shift; cmd_shell "$@" ;;
     logs)    shift; cmd_logs "$@" ;;
     link)    shift; cmd_link "$@" ;;
+    profile) shift; cmd_profile "$@" ;;
     db)      shift; cmd_db "$@" ;;
     mail)    shift; cmd_mail "$@" ;;
     images)  shift; cmd_images "$@" ;;

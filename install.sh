@@ -15,6 +15,8 @@ warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 title() { echo -e "\n${BLUE}$1${NC}"; }
 
+# shellcheck source=lib/compose.sh
+. ./lib/compose.sh
 # shellcheck source=lib/menu.sh
 . ./lib/menu.sh
 
@@ -100,35 +102,6 @@ DEF_DIR="${PROJECTS_DIR:-$HOME/php-devforge}"
 DEF_PHP="${PHP_VERSION:-84}"
 DEF_DNS_PORT="${DNS_PORT:-}"
 case "${IMAGE_MODE:-missing}" in build) DEF_IMAGES="build" ;; *) DEF_IMAGES="pull" ;; esac
-
-# Compose cannot parse the files with an empty PHP_VERSION: `depends_on:
-# php${PHP_VERSION}dev` becomes `phpdev` and the whole project is rejected. .env
-# is written further down, so run compose through an env file that has values.
-# A real .env wins on re-runs: a local override file may define more.
-compose_with_env() {
-    local f out
-    for f in .env .env.example; do
-        [ -f "$f" ] || continue
-        # shellcheck source=/dev/null
-        out="$(set -a +u; . "./$f"; set +a -u; docker compose "$@" 2>/dev/null)"
-        [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
-    done
-    return 1
-}
-
-compose_profiles() { compose_with_env config --profiles; }
-
-# Nothing here enumerates versions: adding php86dev to the compose file is enough.
-php_versions() {
-    compose_with_env config --services | sed -n 's/^php\([0-9][0-9]\)dev$/\1/p' | sort
-}
-
-# What a profile adds on top of the default set, straight from the compose file,
-# so the menu describes itself: pg18 -> postgres:18, mail -> axllent/mailpit.
-profile_images() {
-    comm -13 "$BASE_IMAGES" <(compose_with_env --profile "$1" config --images | sort) \
-        | paste -sd', ' -
-}
 
 valid_profile() { printf '%s\n' "$ALL_PROFILES" | grep -qx "$1"; }
 
@@ -228,7 +201,7 @@ info "Your user: uid $PUID_V, gid $PGID_V"
 
 title "Databases and mail"
 
-ALL_PROFILES="$(compose_profiles)" || {
+ALL_PROFILES="$(all_profiles)" || {
     err "Could not read the compose profiles."
     echo "  Check it by hand:  docker compose config --profiles" >&2
     exit 1
@@ -275,9 +248,7 @@ elif [ "$ASSUME_YES" -eq 1 ] || ! menu_available; then
     fi
 else
     echo "  reading the compose file..."
-    BASE_IMAGES="$(mktemp)"
-    trap 'rm -f "$BASE_IMAGES"' EXIT
-    compose_with_env config --images | sort > "$BASE_IMAGES"
+    compose_cache
 
     opts=()
     while read -r d; do
@@ -291,7 +262,6 @@ EOF
     fi
 
     PROFILES="$(menu_many "Optional services" "${COMPOSE_PROFILES:-}" "${opts[@]}")"
-    rm -f "$BASE_IMAGES"; trap - EXIT
 fi
 
 # ---------- write .env ----------

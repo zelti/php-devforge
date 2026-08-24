@@ -1158,7 +1158,7 @@ what the README explains first.
       restart. Then introduce `sites/` as what it is — the shortcut you reach for
       when you want a cleaner URL — rather than as the way it works.
 
-- [ ] **38. Profiles are not discoverable from the command line**
+- [x] **38. Profiles are not discoverable from the command line** — FIXED
       `forge help` and `forge db list` both already exist, which is its own evidence
       for tasks 34 and 35: they were never found because nothing points at them.
 
@@ -1184,6 +1184,40 @@ what the README explains first.
       same way task 32's bug did — `2>/dev/null ... || true`. Every caller is behind
       `need_env` today, so it cannot bite, but this task rewrites that function.
 
+      Done as `forge profile list [filter] | on <name> | off <name>`. `forge db` and
+      `forge mail` stay as wrappers — they read well and the installer already names
+      them — and `db_profiles()` now fails loudly.
+
+      ```
+        mail        ON   mailpit:latest
+        nginx       off  nginx:dev            replaces apachedev
+        pg18        ON   postgres:18
+        search      off  elasticsearch:8.14.2, kibana:8.14.2
+        tools       -    mkcert:dev           used by forge certs
+      ```
+
+      `compose_with_env()` and `profile_images()` moved out of `install.sh` into
+      **`lib/compose.sh`**, joined by `profile_services()`. That **retired
+      `compose_service()`**, the hardcoded `pg* -> postgres*dev` rule: the service a
+      profile starts is now diffed out of the compose files like everything else.
+
+      **A bug in that move, found before shipping:** the base set was read with
+      `.env`'s own `COMPOSE_PROFILES` active, so an already-enabled profile appeared
+      on both sides of the diff. `forge profile off pg18` would have reported that
+      pg18 starts nothing, and stopped nothing. `compose_with_env()` now clears
+      `COMPOSE_PROFILES`; callers ask for one with `--profile`.
+
+      Two profiles are stated rather than detected, with the reason in a comment:
+      `nginx` publishes the same 80/443 as `apachedev`, so turning it on stops apache
+      and turning it off brings it back; `tools` is a one-shot mkcert run, so turning
+      it on is refused and points at `forge certs`. Detecting either means parsing
+      ports or restart policies out of YAML with no `jq` guaranteed, and the signals
+      lie — postgres has no `restart:` either.
+
+      CI drives the nginx pair through `forge` instead of the manual stop/start dance
+      it used to spell out, which is the only case where turning something on turns
+      something else off. Elasticsearch is asserted in the listing but deliberately
+      not started: the task is discoverability, and a 700 MB pull buys no signal.
 ---
 
 ## 🧪 Found while verifying task 38 against a real local stack

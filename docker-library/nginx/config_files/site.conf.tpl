@@ -27,8 +27,8 @@ server {
     listen 443 ssl;
     http2 on;
     server_name mail.${DEV_DOMAIN};
-    ssl_certificate     /etc/nginx/ssl/php-devforge.pem;
-    ssl_certificate_key /etc/nginx/ssl/php-devforge.key;
+    ssl_certificate     ${SSL_CERT};
+    ssl_certificate_key ${SSL_KEY};
     location / {
         resolver 127.0.0.11 ipv6=off valid=10s;
         set $mail "mailpit:8025";
@@ -50,7 +50,7 @@ server {
     listen 443 ssl;
     http2 on;
     server_name ~^(?<subdomains>.+)\.${DEV_DOMAIN}$;
-    ssl_certificate     /etc/nginx/ssl/php-devforge.pem;
-    ssl_certificate_key /etc/nginx/ssl/php-devforge.key;
+    ssl_certificate     ${SSL_CERT};
+    ssl_certificate_key ${SSL_KEY};
     include /etc/nginx/snippets/common_server_config.conf;
 }

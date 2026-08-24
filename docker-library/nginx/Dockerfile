@@ -32,14 +32,11 @@ COPY config_files/config.main /etc/nginx/conf.d/config.main
 # 3. Crear carpeta de certificados
 RUN mkdir -p /etc/nginx/ssl/
 
-# 4. CMD: Procesa ambos templates con envsubst y luego inicia OpenResty
-CMD ["/bin/bash", "-c", " \
-    # Procesa el archivo principal de Nginx
-    envsubst '$DEV_DOMAIN $PHP_VERSION' < /etc/nginx/conf.d/site.conf.tpl > /etc/nginx/conf.d/site.conf && \
-    \
-    # Procesa el fragmento de configuración común y lo guarda donde se incluye
-    envsubst '$DEV_DOMAIN $PHP_VERSION' < /etc/nginx/conf.d/common_server_config.conf.tpl > /etc/nginx/snippets/common_server_config.conf && \
-    \
-    # Inicia OpenResty
-    openresty -g 'daemon off;' \
-    "]
+# The entrypoint renders the templates and picks the certificate: the real one if
+# ./certificates has it, a self-signed one it generates otherwise. Without it a
+# missing certificate stopped nginx from starting at all.
+COPY config_files/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["openresty", "-g", "daemon off;"]

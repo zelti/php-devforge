@@ -40,9 +40,9 @@ else
 fi
 
 # The variable list is explicit so nginx's own $mail and $subdomains survive.
-envsubst '$DEV_DOMAIN $PHP_VERSION $SSL_CERT $SSL_KEY' \
+envsubst '$DEV_DOMAIN $PHP_VERSION $ENABLED_PROFILES $SSL_CERT $SSL_KEY' \
     < /etc/nginx/conf.d/site.conf.tpl > /etc/nginx/conf.d/site.conf
-envsubst '$DEV_DOMAIN $PHP_VERSION $SSL_CERT $SSL_KEY' \
+envsubst '$DEV_DOMAIN $PHP_VERSION $ENABLED_PROFILES $SSL_CERT $SSL_KEY' \
     < /etc/nginx/conf.d/common_server_config.conf.tpl > /etc/nginx/snippets/common_server_config.conf
 
 exec "$@"

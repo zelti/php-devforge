@@ -38,6 +38,33 @@ image_mode() {
 
 need_env() {
     [ -f .env ] || { err "No .env here. Run ./install.sh first."; exit 1; }
+    ensure_php_profiles
+}
+
+# PHP versions became profiles in task 41. Before that every version ran, so a
+# COMPOSE_PROFILES with no php entry can only be an older .env: keep everything
+# it used to have rather than silently dropping two versions. The write makes
+# this a one-time notice.
+ensure_php_profiles() {
+    enabled_profiles | grep -qE '^php[0-9][0-9]$' && return 0
+    local versions keep add
+    versions="$(php_versions)"
+    [ -n "$versions" ] || return 0
+    keep="$(enabled_profiles)"
+    add="$(printf 'php%s\n' $versions)"
+    write_profiles $keep $add
+    warn "PHP versions are now picked, like the databases."
+    echo "    Kept the ones you had: $(printf '%s\n' "$versions" | pretty | commas)"
+    echo "    Drop the ones you do not use:  forge php list"
+}
+
+# A version is installed when its profile is on. Anything else is a 2 GB image
+# that was never pulled.
+need_php() {
+    is_on "php$1" && return 0
+    err "PHP $(printf '%s' "$1" | pretty) is not installed."
+    echo "  Install it:  forge php on $(printf '%s' "$1" | pretty)" >&2
+    exit 1
 }
 
 # Every checkout claims the same compose project, so containers started from
@@ -92,7 +119,7 @@ cmd_status() {
     need_env
     echo -e "${BLUE}PHP DevForge${NC}"
     echo "  domain:   *.$(sed -ne 's/^DEV_DOMAIN=//p' .env)"
-    echo "  default:  PHP $(current_version | pretty)"
+    echo "  php:      $(installed_versions | pretty | commas)  (default $(current_version | pretty))"
     echo "  images:   $(image_mode)"
     echo "  projects: $(sed -ne 's/^PROJECTS_DIR=//p' .env)"
     local owner; owner="$(active_dir)"
@@ -107,6 +134,11 @@ cmd_use() {
     need_env
     [ $# -ge 1 ] || { err "Which version? e.g. forge use 8.5"; exit 1; }
     local v; v="$(normalise "$1")"
+    if ! is_on "php$v"; then
+        info "PHP $(echo "$v" | pretty) is not installed yet; adding it"
+        local keep; keep="$(enabled_profiles)"
+        write_profiles $keep "php$v"
+    fi
     sed -i "s/^PHP_VERSION=.*/PHP_VERSION=${v}/" .env
     info "Default is now PHP $(echo "$v" | pretty)"
     compose_up
@@ -115,6 +147,7 @@ cmd_use() {
 cmd_shell() {
     need_env
     local v; v="$(normalise "${1:-$(current_version)}")"
+    need_php "$v"
     # Keep your current directory when you are inside the projects folder.
     local wd="/home/php-devforge"
     case "$PWD" in *public_html*|"$(sed -ne 's/^PROJECTS_DIR=//p' .env)"*) wd="$PWD" ;; esac
@@ -130,7 +163,9 @@ cmd_logs() {
     if [ -z "$arg" ]; then
         docker compose logs -f
     elif printf '%s' "$arg" | grep -qE '^[0-9]+\.?[0-9]+$'; then
-        docker compose logs -f "php$(normalise "$arg")dev"
+        local v; v="$(normalise "$arg")"
+        need_php "$v"
+        docker compose logs -f "php${v}dev"
     else
         # Plain compose here, not compose_with_env: that one clears
         # COMPOSE_PROFILES, which would hide mailpit and the databases.
@@ -184,6 +219,10 @@ profile_list() {
 
 db_profiles() { profile_list | grep -E '^(pg[0-9]+|mariadb[0-9]+)$' || true; }
 
+# The versions actually installed, as 83/84 -- php_versions() lists every one the
+# compose files define, installed or not.
+installed_versions() { enabled_profiles | sed -n 's/^php\([0-9][0-9]\)$/\1/p' | sort; }
+
 is_on() { enabled_profiles | grep -qx "$1"; }
 
 # Two profiles are not plain add-ons, and saying so beats parsing YAML for it:
@@ -193,6 +232,7 @@ profile_note() {
     case "$1" in
         nginx) echo "replaces apachedev" ;;
         tools) echo "used by forge certs" ;;
+        "php$(current_version)") echo "default: answers host names with no --pNN" ;;
     esac
 }
 
@@ -244,7 +284,7 @@ cmd_profile() {
                     warn "apachedev goes down: nginx wants the same ports"
                 fi
                 compose_up
-                info "$name on   ->  $(profile_services "$name" | paste -sd', ' -)"
+                info "$name on   ->  $(profile_services "$name" | commas)"
             else
                 write_profiles $keep
                 profile_services "$name" | while read -r svc; do
@@ -278,6 +318,36 @@ cmd_db() {
             cmd_profile "$action" "$name"
             ;;
         *) err "forge db [list|on <name>|off <name>]"; exit 1 ;;
+    esac
+}
+
+# Versions are profiles too, so this reads like `forge db`. The extra rule is the
+# default: something has to answer a host name with no --pNN suffix.
+cmd_php() {
+    need_env
+    local action="${1:-list}" name="${2:-}" v def
+    def="$(current_version)"
+    case "$action" in
+        list)
+            php_versions | while read -r p; do
+                [ -n "$p" ] || continue
+                if   [ "$p" = "$def" ]; then printf '    %-5s ON    default\n' "$(printf '%s' "$p" | pretty)"
+                elif is_on "php$p";     then printf '    %-5s ON\n'            "$(printf '%s' "$p" | pretty)"
+                else                         printf '    %-5s off   about 2 GB to install\n' "$(printf '%s' "$p" | pretty)"
+                fi
+            done
+            ;;
+        on|off)
+            [ -n "$name" ] || { err "which version? try: forge php list"; exit 1; }
+            v="$(normalise "$name")"
+            if [ "$action" = off ] && [ "$v" = "$def" ]; then
+                err "PHP $(printf '%s' "$v" | pretty) is the default; nothing would answer a plain host name."
+                echo "  Point the default elsewhere first:  forge use <version>" >&2
+                exit 1
+            fi
+            cmd_profile "$action" "php$v"
+            ;;
+        *) err "forge php [list|on <version>|off <version>]"; exit 1 ;;
     esac
 }
 
@@ -342,7 +412,9 @@ PHP DevForge
   forge restart [service...]   recreate the containers
   forge status                 what is running, and how it is configured
 
-  forge use <version>          set the default PHP version
+  forge php list               the PHP versions, and which are installed
+  forge php on|off <version>   install one, or free the disk it uses
+  forge use <version>          set the default version (installs it if needed)
   forge shell [version]        open a shell in a PHP container
   forge logs  [version|service] follow the logs; everything if you name nothing
 
@@ -359,7 +431,7 @@ PHP DevForge
   forge certs                  regenerate the HTTPS certificates
   forge dns [setup|status|test|remove]
 
-Versions available here: $(php_versions | pretty | tr '\n' ' ')
+PHP versions: $(installed_versions | pretty | commas) installed, out of $(php_versions | pretty | commas)
 Version arguments accept either form: 8.5 or 85.
 EOF
 }
@@ -373,6 +445,7 @@ case "${1:-help}" in
     stop)    shift; cmd_stop "$@" ;;
     restart) shift; cmd_restart "$@" ;;
     status)  shift; cmd_status ;;
+    php)     shift; cmd_php "$@" ;;
     use)     shift; cmd_use "$@" ;;
     shell)   shift; cmd_shell "$@" ;;
     logs)    shift; cmd_logs "$@" ;;

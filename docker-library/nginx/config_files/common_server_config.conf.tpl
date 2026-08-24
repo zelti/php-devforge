@@ -1,5 +1,7 @@
 set $dev_domain "${DEV_DOMAIN}";
 set $php_version "${PHP_VERSION}";
+# The COMPOSE_PROFILES line, so the Lua can tell an uninstalled version from a typo.
+set $enabled_profiles "${ENABLED_PROFILES}";
 
 # Both are filled in by the Lua below. The placeholder values matter: if the Lua
 # ever failed to run, a .php would be served as a static file, which is how the

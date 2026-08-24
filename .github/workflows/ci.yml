@@ -108,7 +108,9 @@ jobs:
             ./install.sh --skip-cert --skip-dns --skip-link --domain=phpforge.dev
           grep -q '^PHP_VERSION=85$' .env          # moved off the default 8.4
           grep -q '^IMAGE_MODE=missing$' .env      # kept 'pull'
-          grep -q '^COMPOSE_PROFILES=pg18,mail$' .env
+          # 8.4 was toggled off and 8.3/8.5 on, so the versions are a choice and
+          # the second question decided which of them answers a plain host name.
+          grep -q '^COMPOSE_PROFILES=php83,php85,pg18,mail$' .env
           rm -f .env .env.backup
           echo "the menus work end to end"
 
@@ -137,7 +139,20 @@ jobs:
       # --skip-dns: the runner's resolver is left alone; curl --resolve is used
       # instead. Certificates are not skipped, so real TLS is exercised.
       - name: run the installer
-        run: ./install.sh --yes --skip-dns
+        run: ./install.sh --yes --skip-dns --php=84
+
+      # Every version used to be installed whether or not you wanted it: 1.9 GB
+      # each. What is not picked must not reach the default set at all.
+      - name: only the PHP versions you picked are installed
+        run: |
+          grep -q '^COMPOSE_PROFILES=php84$' .env
+          for s in php83dev php85dev; do
+            if docker compose config --services | grep -qx "$s"; then
+              echo "$s starts by default and should not"; exit 1
+            fi
+          done
+          docker compose config --services | grep -qx php84dev
+          echo "one version picked, one version installed"
 
       - name: .env was written
         run: |
@@ -152,7 +167,7 @@ jobs:
           test -L "$HOME/.local/bin/forge" || { echo "installer did not link forge"; exit 1; }
           export PATH="$HOME/.local/bin:$PATH"
           cd /tmp    # it must work from anywhere, not just the checkout
-          forge help | grep -q "8.3 8.4 8.5" || { echo "versions not discovered"; exit 1; }
+          forge help | grep -q "out of 8.3, 8.4, 8.5" || { echo "versions not discovered"; exit 1; }
           forge status | grep -q "PHP DevForge"
           forge images status
           # unknown versions must be refused, not passed to docker
@@ -163,6 +178,21 @@ jobs:
         # Every PHP version is built. 8.5 broke silently once: opcache became
         # built-in and docker-php-ext-install started failing on it.
         run: docker compose build php83dev php84dev php85dev apachedev
+
+      # The rest of the run needs all three. Adding them through forge rather than
+      # by naming services proves the command people are told to use, and keeps
+      # .env and the containers agreeing -- Apache reads COMPOSE_PROFILES to know
+      # what exists.
+      - name: forge php on adds a version
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          forge php on 8.3
+          forge php on 8.5
+          for v in 83 84 85; do
+            grep -q "^COMPOSE_PROFILES=.*php$v" .env || { grep '^COMPOSE_PROFILES=' .env; exit 1; }
+          done
+          forge php list | grep -qE '^\s+8\.4\s+ON\s+default'
+          echo "versions added"
 
       - name: start the stack
         run: |
@@ -254,6 +284,63 @@ jobs:
             printf '%s' "$got" | grep -q "PHP ${v:0:1}.${v:1:1}" \
               || { echo "expected PHP ${v:0:1}.${v:1:1}"; exit 1; }
           done
+
+      # A version that is not installed used to proxy to a host that does not
+      # resolve: a bare 503, indistinguishable from a typo. The trap puts 8.3 back
+      # however this ends, because every step after this one uses it.
+      - name: an uninstalled version says so instead of failing blankly
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          trap 'forge php on 8.3 >/dev/null 2>&1 || true' EXIT
+
+          # the default cannot be removed: nothing would answer a plain host name
+          out="$(forge php off 8.4 2>&1)" && { echo "removing the default was allowed"; exit 1; }
+          printf '%s\n' "$out" | grep -q 'forge use' || { echo "$out"; exit 1; }
+
+          forge php off 8.3
+          docker compose ps --services | grep -qx php83dev \
+            && { echo "php83dev still running"; exit 1; }
+
+          host=my-app--sites--p83.phpforge.dev
+          code="$(curl -sk -o /tmp/gone.html -w '%{http_code}' \
+                  --resolve "$host:443:127.0.0.1" "https://$host/")"
+          test "$code" = 503 || { echo "expected 503, got $code"; exit 1; }
+          # "/" reaches PHP through DirectoryIndex, which is where an earlier
+          # version of this page was swallowed and served as an empty 200.
+          grep -q 'PHP 8.3 is not installed' /tmp/gone.html || { cat /tmp/gone.html; exit 1; }
+          grep -q 'forge php on 8.3' /tmp/gone.html || { cat /tmp/gone.html; exit 1; }
+          echo "it explains itself"
+
+          forge php on 8.3
+          # -k here only: TLS trust is what several other steps are for, and this
+          # way the step also runs on a machine that skipped ./install_cert.sh.
+          for i in $(seq 1 30); do
+            curl -fsSk --max-time 5 --resolve "$host:443:127.0.0.1" "https://$host/" \
+              | grep -q 'PHP 8.3' && { echo "8.3 serves again after ${i}s"; exit 0; }
+            sleep 1
+          done
+          echo "8.3 never came back"; exit 1
+
+      # Upgrading is a git pull, and a .env written before task 41 lists no php
+      # profile at all. Dropping to one version would silently break every --pNN
+      # host that person had.
+      - name: an older .env keeps the versions it had
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          cp .env /tmp/env.keep
+          trap 'cp /tmp/env.keep .env' EXIT
+          sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=/' .env
+
+          out="$(forge status)"
+          printf '%s\n' "$out" | grep -q 'PHP versions are now picked' \
+            || { echo "$out"; echo "no notice printed"; exit 1; }
+          grep -q '^COMPOSE_PROFILES=php83,php84,php85$' .env \
+            || { grep '^COMPOSE_PROFILES=' .env; exit 1; }
+
+          # and it says it once: the write is the migration
+          forge status | grep -q 'PHP versions are now picked' \
+            && { echo "the notice repeats"; exit 1; }
+          echo "older .env kept its versions"
 
       # Neither is installed by us any more: the base images already provide them.
       # If that ever stops being true, this catches it instead of a user finding out.

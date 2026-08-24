@@ -22,8 +22,11 @@ ROW = re.compile(r"^\s*(?:\[[ x]\]|>|\s{3})\s+(\S+)\s")
 
 # What to answer, in order: (text that means the menu is up, what to pick).
 # A single-choice menu takes one name; a multi-choice menu takes a list.
+# 84 comes preselected, so naming it here toggles it off: the run installs 8.3
+# and 8.5 only, which is the point of picking versions at all.
 STEPS = [
-    ("Default PHP version", "85"),
+    ("PHP versions", ["84", "83", "85"]),
+    ("Default version", "85"),
     ("Images", "pull"),
     ("space toggles", ["pg18", "mail"]),
 ]

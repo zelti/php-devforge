@@ -152,6 +152,27 @@ Y abre **https://welcome.phpforge.dev**.
    ```
    Comprueba que funciona: `https://welcome.phpforge.dev`
 
+### 🧹 Desinstalar
+
+```bash
+forge uninstall --dry-run    # qué borraría, sin tocar nada
+forge uninstall              # hacerlo
+```
+
+Deshace la instalación en orden inverso: los contenedores, la red y las
+imágenes, el enlace de `forge`, la entrada de DNS local, la CA de confianza
+(almacén del sistema *y* Firefox/Chrome) y los archivos que generó el
+instalador — `.env`, `certificates/`, `.caroot/`.
+
+**Tus datos no se dan por supuestos.** Los volúmenes de las bases de datos y tu
+carpeta de proyectos son dos preguntas aparte, ambas con "no" por defecto, y
+`--yes` las conserva. Para llevártelas también: `--volumes` y `--projects`. Tu
+`docker-compose.local.yml` y lo que tengas en `custom/php.d/` no se tocan nunca.
+
+Antes de tocar nada imprime todo lo que va a borrar, con tamaños. Lo último que
+dice es cómo borrar la carpeta del repositorio, que es lo único que no hace por
+ti.
+
 ## 💻 Uso
 
 ### ▶️ Arrancar y parar
@@ -179,6 +200,7 @@ forge images build|pull      # construir en local, o usar las publicadas
 forge certs                  # regenerar los certificados
 forge dns status             # ver el DNS local
 
+forge uninstall              # deshacer la instalación (ver más abajo)
 forge help
 ```
 

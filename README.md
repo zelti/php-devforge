@@ -151,6 +151,27 @@ Then open **https://welcome.phpforge.dev**.
 
     Check it works: `https://welcome.phpforge.dev`
 
+### 🧹 Uninstalling
+
+```bash
+forge uninstall --dry-run    # what it would remove, changing nothing
+forge uninstall              # do it
+```
+
+It undoes the install in reverse: the containers, the network and the images,
+the `forge` symlink, the local DNS entry, the trusted CA (system store *and*
+Firefox/Chrome), and the files the installer generated — `.env`,
+`certificates/`, `.caroot/`.
+
+**Your data is never assumed.** The database volumes and your projects folder
+are each a separate question, both answered "no" by default, and `--yes` keeps
+them. Take them too with `--volumes` and `--projects`. Your
+`docker-compose.local.yml` and `custom/php.d/` files are always left alone.
+
+It prints everything it will touch, with sizes, before touching any of it. The
+last thing it says is how to delete the checkout, which is the one part it will
+not do for you.
+
 ## 💻 Usage
 
 ### ▶️ Starting and Stopping
@@ -178,6 +199,7 @@ forge images build|pull      # build locally, or use the published images
 forge certs                  # regenerate the certificates
 forge dns status             # inspect the local DNS
 
+forge uninstall              # undo the install (see below)
 forge help
 ```
 

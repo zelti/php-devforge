@@ -394,13 +394,22 @@ jobs:
           got="$(docker compose exec -T php83dev php -r 'echo ini_get("memory_limit");')"
           test "$got" = 444M || { echo "php83dev: expected its own 444M, got $got"; exit 1; }
 
-          # and FPM, not just the CLI: the mount is what the request goes through
+          # and FPM, not just the CLI: the mount is what the request goes through.
+          # Retried, because the restart above answers on port 443 before the PHP
+          # containers finish their entrypoint -- Apache proxies into that window
+          # and returns 503, which is what "started" not meaning "ready" looks like.
           DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
           printf '<?php echo ini_get("memory_limit");' > "$DIR/sites/my-app/limit.php"
           host=my-app--sites--p83.phpforge.dev
-          got="$(curl -fsSk --resolve "$host:443:127.0.0.1" "https://$host/limit.php")"
+          got=""
+          for i in $(seq 1 30); do
+            got="$(curl -fsSk --max-time 5 --resolve "$host:443:127.0.0.1" \
+                   "https://$host/limit.php" 2>/dev/null || true)"
+            [ -n "$got" ] && break
+            sleep 1
+          done
           rm -f "$DIR/sites/my-app/limit.php"
-          test "$got" = 444M || { echo "over http: expected 444M, got $got"; exit 1; }
+          test "$got" = 444M || { echo "over http: expected 444M, got '$got'"; exit 1; }
 
           echo "shared settings shared, per-version settings not"
 

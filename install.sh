@@ -386,17 +386,39 @@ if ! grep -q '^COMPOSE_FILE=.*docker-compose\.local\.yml' .env 2>/dev/null; then
 fi
 
 mkdir -p custom/php.d
-if [ ! -f custom/php.d/README.md ]; then
-    cat > custom/php.d/README.md <<'INIEOF'
-Any `.ini` file here is loaded by every PHP container. No rebuild needed: edit,
-then `forge restart`.
+ensure_custom_dirs
+
+# Rewritten while it is still ours, so the note follows upgrades -- installers
+# before per-version folders left advice that no longer matches. Ours means the
+# header below, or the opening line every earlier version was written with, for
+# the copies already out there. Edit the file and it stops being rewritten.
+NOTE=custom/php.d/README.md
+if [ ! -f "$NOTE" ] \
+   || head -1 "$NOTE" | grep -q '^<!-- written by install.sh' \
+   || head -1 "$NOTE" | grep -q '^Any `\.ini` file here is loaded by every PHP container'; then
+    cat > "$NOTE" <<'INIEOF'
+<!-- written by install.sh; delete this line and it will stop being rewritten -->
+
+# PHP settings, without rebuilding anything
+
+Any `.ini` file here is loaded by **every** PHP container:
 
     ; custom/php.d/99-mine.ini
     memory_limit = 512M
     upload_max_filesize = 100M
 
-This is scanned in addition to the image's own conf.d, so it does not shadow
-anything -- the Xdebug toggle keeps working.
+For one version only, put it in that version's folder instead. It is read after
+this one, so it wins:
+
+    ; custom/8.3/php.d/99-mine.ini
+    memory_limit = 1G
+
+Both are scanned in addition to the image's own conf.d, so nothing is shadowed
+-- the Xdebug toggle keeps working. Run `forge restart` afterwards: a plain
+restart does not re-read them.
+
+The version folders hold more than `php.d` if you need it; everything under
+`custom/<version>/` is mounted at `/usr/local/etc/php/version` in that container.
 INIEOF
 fi
 

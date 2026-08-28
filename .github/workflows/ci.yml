@@ -369,6 +369,41 @@ jobs:
             && { echo "the notice repeats"; exit 1; }
           echo "older .env kept its versions"
 
+      # custom/php.d reaches every version; custom/<version>/php.d only its own,
+      # and wins where they collide. The trap matters: an .ini left behind would
+      # change the memory limit for every step after this one.
+      - name: per-version php settings
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          trap 'rm -f custom/php.d/99-ci.ini custom/8.3/php.d/99-ci.ini; forge restart >/dev/null 2>&1' EXIT
+
+          # extends appends to the shared volume list instead of replacing it.
+          # The whole design rests on that, so it is asserted directly.
+          n="$(COMPOSE_PROFILES='*' docker compose config --format json \
+               | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["services"]["php85dev"]["volumes"]))')"
+          test "$n" = 5 || { echo "php85dev has $n volumes, expected 5"; exit 1; }
+
+          printf 'memory_limit = 333M\n' > custom/php.d/99-ci.ini
+          printf 'memory_limit = 444M\n' > custom/8.3/php.d/99-ci.ini
+          forge restart >/dev/null
+
+          for s in php84dev php85dev; do
+            got="$(docker compose exec -T "$s" php -r 'echo ini_get("memory_limit");')"
+            test "$got" = 333M || { echo "$s: expected the shared 333M, got $got"; exit 1; }
+          done
+          got="$(docker compose exec -T php83dev php -r 'echo ini_get("memory_limit");')"
+          test "$got" = 444M || { echo "php83dev: expected its own 444M, got $got"; exit 1; }
+
+          # and FPM, not just the CLI: the mount is what the request goes through
+          DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+          printf '<?php echo ini_get("memory_limit");' > "$DIR/sites/my-app/limit.php"
+          host=my-app--sites--p83.phpforge.dev
+          got="$(curl -fsSk --resolve "$host:443:127.0.0.1" "https://$host/limit.php")"
+          rm -f "$DIR/sites/my-app/limit.php"
+          test "$got" = 444M || { echo "over http: expected 444M, got $got"; exit 1; }
+
+          echo "shared settings shared, per-version settings not"
+
       # Neither is installed by us any more: the base images already provide them.
       # If that ever stops being true, this catches it instead of a user finding out.
       - name: opcache and mbstring are present in every version

@@ -6,23 +6,6 @@ x-logging: &json-logging
     max-file: "2"
   driver: "json-file"
 
-x-phpconfig_default: &phpconfig_default
-  volumes:
-    - dataphp-devforge:/home/php-devforge
-    - ${PROJECTS_DIR:-/home/php-devforge/public_html}:/home/php-devforge/public_html
-    - ./.caroot:/caroot:ro
-    # Drop .ini files in here to change PHP settings. No rebuild needed, and it
-    # does not shadow the image's own conf.d, where the Xdebug toggle lives.
-    - ./custom/php.d:/usr/local/etc/php/custom.d:ro
-  environment:
-    - PHP_XDEBUG=${XDEBUG_ENABLE}
-    - XDEBUG_IDKEY=${XDEBUG_IDKEY}
-    - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/usr/local/etc/php/custom.d
-    # Files created in the container end up owned by this uid/gid on the host.
-    - PUID=${PUID:-1000}
-    - PGID=${PGID:-1000}
-  logging: *json-logging
-
 # Images are published to ghcr.io. `docker compose up -d` pulls them, which turns
 # a ~15 minute first run into about one.
 #
@@ -129,13 +112,16 @@ services:
       timeout: 10s
 
   # One profile per version: each image is about 2 GB, so nothing is installed
-  # unless it is picked. COMPOSE_PROFILES always carries the default version --
+  # unless it is picked. Everything they share lives in php-base.yml. COMPOSE_PROFILES always carries the default version --
   # install.sh writes it, `forge php off` refuses to remove it.
   #
   # No `depends_on` on the web servers: compose refuses to parse a project whose
   # dependency sits behind a disabled profile, and the backend is resolved per
   # request anyway (resolve_docroot.lua).
   php83dev:
+    extends:
+      file: php-base.yml
+      service: php
     profiles: ["php83"]
     image: ghcr.io/zelti/php-devforge/php:8.3-dev
     pull_policy: ${IMAGE_MODE:-missing}
@@ -146,9 +132,15 @@ services:
       args:
         PHP_TAG: "8.3"
         NODE_VERSION: "${NODE_VERSION}"
-    <<: *phpconfig_default
+    # The only per-version line. extends appends to the shared list above.
+    volumes:
+      - ./custom/8.3:/usr/local/etc/php/version:ro
+    logging: *json-logging
 
   php84dev:
+    extends:
+      file: php-base.yml
+      service: php
     profiles: ["php84"]
     image: ghcr.io/zelti/php-devforge/php:8.4-dev
     pull_policy: ${IMAGE_MODE:-missing}
@@ -159,11 +151,18 @@ services:
       args:
         PHP_TAG: "8.4"
         NODE_VERSION: "${NODE_VERSION}"
-    <<: *phpconfig_default
+    # The only per-version line. extends appends to the shared list above.
+    volumes:
+      - ./custom/8.4:/usr/local/etc/php/version:ro
+    logging: *json-logging
 
   # Adding a version is this block and nothing else: one Dockerfile serves them
-  # all, and the vhosts pick the backend from the host name.
+  # all, the vhosts pick the backend from the host name, and forge creates the
+  # custom/<version> folder on the next start.
   php85dev:
+    extends:
+      file: php-base.yml
+      service: php
     profiles: ["php85"]
     image: ghcr.io/zelti/php-devforge/php:8.5-dev
     pull_policy: ${IMAGE_MODE:-missing}
@@ -174,7 +173,10 @@ services:
       args:
         PHP_TAG: "8.5"
         NODE_VERSION: "${NODE_VERSION}"
-    <<: *phpconfig_default
+    # The only per-version line. extends appends to the shared list above.
+    volumes:
+      - ./custom/8.5:/usr/local/etc/php/version:ro
+    logging: *json-logging
 
 
 volumes:

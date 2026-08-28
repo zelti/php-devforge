@@ -1,0 +1,30 @@
+# What every PHP container shares. Not part of COMPOSE_FILE: docker-compose.yml
+# pulls this in with `extends:`, and only the extended service comes along.
+#
+# It is a separate file rather than a YAML anchor because an anchor merge (<<:)
+# REPLACES a service's volume list instead of adding to it -- so the one mount
+# that differs per version could not be added without repeating the four below
+# in each service. `extends:` appends, which is the whole reason this file exists.
+#
+# Paths here resolve against THIS file's directory, which is why it sits at the
+# repo root next to docker-compose.yml.
+
+services:
+  php:
+    volumes:
+      - dataphp-devforge:/home/php-devforge
+      - ${PROJECTS_DIR:-/home/php-devforge/public_html}:/home/php-devforge/public_html
+      - ./.caroot:/caroot:ro
+      # Settings for every version. Each service adds ./custom/<version> on top,
+      # mounted at /usr/local/etc/php/version, which wins over this one.
+      - ./custom/php.d:/usr/local/etc/php/custom.d:ro
+    environment:
+      - PHP_XDEBUG=${XDEBUG_ENABLE}
+      - XDEBUG_IDKEY=${XDEBUG_IDKEY}
+      # Read left to right, so the version folder overrides the shared one, and
+      # both override the image's own conf.d -- where the Xdebug toggle lives.
+      # A folder that does not exist is skipped without complaint.
+      - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/usr/local/etc/php/custom.d:/usr/local/etc/php/version/php.d
+      # Files created in the container end up owned by this uid/gid on the host.
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}

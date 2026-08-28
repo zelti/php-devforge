@@ -375,7 +375,25 @@ jobs:
       - name: per-version php settings
         run: |
           export PATH="$HOME/.local/bin:$PATH"
-          trap 'rm -f custom/php.d/99-ci.ini custom/8.3/php.d/99-ci.ini; forge restart >/dev/null 2>&1' EXIT
+          # Only the files: restarting from a trap would hand the next step a
+          # half-started stack, which is exactly what it did the first time.
+          # The settings themselves live until the containers are recreated, and
+          # no later step asserts a memory limit.
+          trap 'rm -f custom/php.d/99-ci.ini custom/8.3/php.d/99-ci.ini' EXIT
+
+          # "Started" is not "ready": Apache answers on 443 before the PHP
+          # containers finish their entrypoint, and a proxy into that window
+          # returns 503. Every request here goes through this.
+          serve() { # host, path -> body, empty if it never answered
+            local out=""
+            for _ in $(seq 1 30); do
+              out="$(curl -fsSk --max-time 5 --resolve "$1:443:127.0.0.1" \
+                     "https://$1/$2" 2>/dev/null || true)"
+              [ -n "$out" ] && break
+              sleep 1
+            done
+            printf '%s' "$out"
+          }
 
           # extends appends to the shared volume list instead of replacing it.
           # The whole design rests on that, so it is asserted directly.
@@ -400,16 +418,16 @@ jobs:
           # and returns 503, which is what "started" not meaning "ready" looks like.
           DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
           printf '<?php echo ini_get("memory_limit");' > "$DIR/sites/my-app/limit.php"
-          host=my-app--sites--p83.phpforge.dev
-          got=""
-          for i in $(seq 1 30); do
-            got="$(curl -fsSk --max-time 5 --resolve "$host:443:127.0.0.1" \
-                   "https://$host/limit.php" 2>/dev/null || true)"
-            [ -n "$got" ] && break
-            sleep 1
-          done
+          got="$(serve my-app--sites--p83.phpforge.dev limit.php)"
           rm -f "$DIR/sites/my-app/limit.php"
           test "$got" = 444M || { echo "over http: expected 444M, got '$got'"; exit 1; }
+
+          # Put the stack back and wait for it, so the next step does not inherit
+          # the restart window this step created.
+          rm -f custom/php.d/99-ci.ini custom/8.3/php.d/99-ci.ini
+          forge restart >/dev/null
+          test -n "$(serve my-app--sites.phpforge.dev '')" \
+            || { echo "the stack did not come back"; docker compose ps; exit 1; }
 
           echo "shared settings shared, per-version settings not"
 

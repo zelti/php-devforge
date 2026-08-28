@@ -1456,6 +1456,37 @@ reasoning about them.
 
 ## 💡 Proposed while using it
 
+- [x] **42. `custom/php.d/*.ini` applies to every version, with no way to say
+      "only 8.3"** — FIXED
+      The mount and `PHP_INI_SCAN_DIR` live in one YAML anchor that all three PHP
+      services merge, so a `memory_limit` meant for the version you are testing an
+      upgrade against lands on the version you actually work in.
+
+      The user asked for `custom/8.5/php.d/` — the version folder one level above
+      `php.d`, so it can hold per-version things other than `.ini` files later. The
+      whole `custom/<version>/` is mounted at `/usr/local/etc/php/version`, and
+      `custom/<version>/php.d` is scanned after the shared folder, so it wins.
+
+      **Three measured facts decided the shape.** A YAML merge key does not append
+      lists: a service-level `volumes:` *replaces* the anchor's, so per-version
+      mounts would have meant repeating the four shared mounts in each service --
+      the duplication tasks 10 and 11 existed to remove. `extends:` does append,
+      and pulls in only the extended service, adding no profile. Relative paths in
+      an extended file resolve against **that file's** directory, which is why
+      `php-base.yml` sits at the repo root.
+
+      A missing directory in `PHP_INI_SCAN_DIR` is skipped without complaint, so a
+      version folder that does not exist costs nothing. The folders are created by
+      `ensure_custom_dirs()` before compose can: Docker creates a missing bind
+      source as **root**, the same trap that left a root-owned `~/php-devforge` on
+      this machine.
+
+      The generated note in `custom/php.d/` had frozen at its first version --
+      `install.sh` only wrote it when absent, so this machine still carried advice
+      from before task 35. It now carries a header and is rewritten while it is
+      still ours, matching the old opening line too so copies already out there get
+      the update. Edit it and it stops being rewritten.
+
 - [x] **41. Every PHP version is installed whether you want it or not** — FIXED
       `php83dev`, `php84dev` and `php85dev` are in the default set, so a plain
       install pulls **5.7 GB of PHP images** (1.9 GB each) and keeps three

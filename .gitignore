@@ -10,5 +10,10 @@
 /docker-compose.local.yml
 /custom/php.d/*
 !/custom/php.d/.gitkeep
+# Per-version settings: custom/8.3/php.d/*.ini and anything else you put there.
+# The folders themselves are tracked so a fresh clone can mount them.
+/custom/[0-9].[0-9]*/**
+!/custom/[0-9].[0-9]*/php.d/
+!/custom/[0-9].[0-9]*/php.d/.gitkeep
 /custom/*/Dockerfile
 /.env.backup

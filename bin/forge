@@ -104,6 +104,7 @@ check_owner() {
 # `set -u` is an error.
 compose_up() {
     check_owner
+    ensure_custom_dirs
     local extra=()
     if is_on nginx; then extra=(--scale apachedev=0); fi
     docker compose up -d "${extra[@]+"${extra[@]}"}" "$@"

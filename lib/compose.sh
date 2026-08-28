@@ -51,6 +51,20 @@ php_versions() {
     printf '%s\n' "$out" | sed -n 's/^php\([0-9][0-9]\)dev$/\1/p' | sort
 }
 
+# docker-compose.yml mounts ./custom/<version> into each PHP container. Docker
+# creates a missing bind-mount source as root, which is how an unwritable folder
+# appears in your project; creating them first keeps them yours. Idempotent, so
+# every start can call it.
+ensure_custom_dirs() {
+    local v
+    while read -r v; do
+        [ -n "$v" ] || continue
+        mkdir -p "custom/$(printf '%s' "$v" | sed 's/\(.\)\(.\)/\1.\2/')/php.d"
+    done <<EOF
+$(php_versions)
+EOF
+}
+
 # Fills the base sets once. Callers that loop should call this first: a command
 # substitution inherits these, so the per-profile diffs below stop re-reading it.
 compose_cache() {

@@ -346,11 +346,22 @@ upload_max_filesize = 100M
 ```
 
 ```bash
-forge restart php84dev
+forge restart
 ```
 
 Se lee *además* de la configuración de la imagen, así que no pisa nada y el interruptor
 de Xdebug sigue funcionando.
+
+**Para una sola versión** — lo mismo, en la carpeta de esa versión:
+
+```ini
+; custom/8.3/php.d/99-mio.ini
+memory_limit = 1G
+```
+
+Se lee después de la carpeta común, así que gana donde las dos coincidan, y ninguna
+otra versión la ve. Todo lo que pongas en `custom/<versión>/` se monta en ese
+contenedor, así que ahí van también las cosas por versión que no sean `.ini`.
 
 **Tus propios servicios** — `docker-compose.local.yml`, se carga solo:
 
@@ -523,7 +534,8 @@ dentro de un contenedor; tu editor debe escuchar en el puerto **9003**.
 - **`npm` muestra un aviso sobre pnpm**: es a propósito. npm sigue funcionando; aquí se
   prefiere pnpm.
 - **Un `.ini` de `custom/php.d/` parece ignorado**: recrea el contenedor con
-  `forge restart php84dev`. Reiniciar no basta.
+  `forge restart`. Reiniciar no basta. Mira también que no haya un archivo en
+  `custom/<versión>/php.d/` pisándolo — ese gana.
 - **`forge: command not found`**: el instalador lo enlaza en `~/.local/bin`, que
   algunos shells no tienen en el `PATH`. Añádelo, o haz `source aliases.bash` desde la
   carpeta del proyecto.

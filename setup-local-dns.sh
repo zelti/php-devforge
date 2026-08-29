@@ -173,6 +173,14 @@ do_remove() {
     esac
 }
 
+# The port the resolver is actually pointed at, whatever we believe it to be.
+configured_port() {
+    case "$(detect_backend)" in
+        macos)    sed -n 's/^port  *\([0-9][0-9]*\).*/\1/p' "/etc/resolver/${DEV_DOMAIN}" 2>/dev/null | head -1 ;;
+        resolved) sed -n 's/^DNS=.*:\([0-9][0-9]*\) *$/\1/p' "$RESOLVED_CONF" 2>/dev/null | head -1 ;;
+    esac
+}
+
 do_status() {
     require_domain
     title "Current state"
@@ -197,11 +205,31 @@ do_status() {
         *) warn "systemd-resolved is not active on this system." ;;
     esac
     echo ""
-    info "Is dnsmasq listening on ${DNS_ADDR}:${DNS_PORT}?"
-    if docker ps --filter name=dnsmasq --filter status=running --format '{{.Names}}' 2>/dev/null | grep -q dnsmasq; then
-        echo "    ✓ dnsmasq container running"
+    # Three numbers that have to agree, printed next to each other. They drifted
+    # apart on a real machine and nothing said so: the resolver kept the old port
+    # while .env and the container moved to the next one, and the domain stopped
+    # resolving with the container running and "configured" on screen.
+    local asked serving
+    asked="$(configured_port)"
+    serving="$(docker ps --filter name=dnsmasq --filter status=running \
+                   --format '{{.Ports}}' 2>/dev/null \
+               | sed -n 's/.*:\([0-9][0-9]*\)->53\/udp.*/\1/p' | head -1)"
+
+    echo "    the resolver asks for port  ${asked:-none configured}"
+    echo "    .env says                   ${DNS_PORT}"
+    echo "    dnsmasq is publishing       ${serving:-nothing (container stopped)}"
+    echo ""
+
+    if [ -z "$serving" ]; then
+        warn "dnsmasq is not running:  forge start"
+    elif [ -z "$asked" ]; then
+        warn "The system is not pointed at it yet:  ./setup-local-dns.sh"
+    elif [ "$asked" = "$DNS_PORT" ] && [ "$asked" = "$serving" ]; then
+        info "✓ all three agree; *.${DEV_DOMAIN} resolves through dnsmasq"
     else
-        echo "    ✗ dnsmasq container stopped  (docker compose up -d dnsmasq)"
+        err "These disagree, so *.${DEV_DOMAIN} will not resolve."
+        echo "    Point the system at the port in use:  ./setup-local-dns.sh"
+        echo "    Or drop the entry entirely:           ./setup-local-dns.sh --remove"
     fi
 }
 

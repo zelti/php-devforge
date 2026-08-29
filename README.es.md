@@ -517,6 +517,10 @@ dentro de un contenedor; tu editor debe escuchar en el puerto **9003**.
 
 ## 🐛 Problemas comunes
 
+- **El dominio dejó de resolver tras reinstalar**: `forge dns status` ahora pone
+  juntos los tres números que tienen que coincidir — el puerto que pide tu sistema,
+  el de `.env` y el que publica dnsmasq. Si no coinciden, `./setup-local-dns.sh`
+  apunta el sistema al puerto en uso.
 - **El DNS no resuelve**: ejecuta `forge dns status` y `forge dns test`. Puede hacer
   falta reiniciar el navegador.
 - **El certificado no es de confianza**: vuelve a ejecutar `forge certs` y reinicia el

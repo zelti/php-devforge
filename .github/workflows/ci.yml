@@ -526,6 +526,34 @@ jobs:
           ./setup-local-dns.sh
           ./setup-local-dns.sh --status
 
+      # Re-running the installer with the stack up used to walk DNS_PORT forward,
+      # because the only thing holding the port was our own dnsmasq. With
+      # --skip-dns the resolver kept the old number and the domain stopped
+      # resolving -- twice on a real machine, once found by someone debugging
+      # their browser.
+      - name: re-installing does not move the DNS port
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          before="$(sed -ne 's/^DNS_PORT=//p' .env)"
+          ./install.sh --yes --skip-dns --skip-cert --skip-link > /tmp/reinstall.log 2>&1
+          after="$(sed -ne 's/^DNS_PORT=//p' .env)"
+          test "$before" = "$after" \
+            || { grep -A3 'free DNS port' /tmp/reinstall.log; echo "moved $before -> $after"; exit 1; }
+
+          # and the three numbers are compared, not merely printed
+          forge dns status > /tmp/dns.log 2>&1
+          grep -q 'all three agree' /tmp/dns.log || { cat /tmp/dns.log; exit 1; }
+
+          # a disagreement has to be named, or it stays invisible the way it did
+          sed -i "s/^DNS_PORT=.*/DNS_PORT=5399/" .env
+          forge dns status > /tmp/dns-bad.log 2>&1 || true
+          grep -q 'These disagree' /tmp/dns-bad.log || { cat /tmp/dns-bad.log; exit 1; }
+          grep -q '5399' /tmp/dns-bad.log && grep -q "$before" /tmp/dns-bad.log \
+            || { cat /tmp/dns-bad.log; echo "it did not name both ports"; exit 1; }
+          sed -i "s/^DNS_PORT=.*/DNS_PORT=$before/" .env
+
+          echo "the DNS port stays where it was put"
+
       - name: the domain resolves through the system resolver
         run: |
           got="$(getent hosts welcome--sites.phpforge.dev | awk '{print $1}')"

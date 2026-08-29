@@ -525,6 +525,10 @@ container; your IDE should listen on port **9003**.
 
 ## 🐛 Troubleshooting
 
+- **The domain stopped resolving after re-installing**: `forge dns status` now puts
+  the three numbers that must agree next to each other — the port your system asks
+  for, the one in `.env`, and the one dnsmasq publishes. When they differ,
+  `./setup-local-dns.sh` repoints the system at the port in use.
 - **DNS not resolving**: run `forge dns status` and `forge dns test`. You may need to
   restart your browser.
 - **SSL certificate not trusted**: re-run `forge certs` and restart your browser.

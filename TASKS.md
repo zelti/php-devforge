@@ -1456,6 +1456,36 @@ reasoning about them.
 
 ## 💡 Proposed while using it
 
+- [x] **43. The installer counts its own dnsmasq as a conflict** — FIXED
+      `install.sh` kept the port from `.env` only when nothing was listening on it,
+      and the thing listening on it was our own dnsmasq. Re-running the installer
+      with the stack up walked the port forward -- 5354 busy, 5355 free -- and with
+      `--skip-dns`, which is what any re-run for an unrelated setting uses, the
+      resolver kept `DNS=127.0.0.1:5354` while dnsmasq moved to 5355. The domain
+      then stopped resolving with the container running and "configured" on screen.
+
+      It happened twice on the user's machine during this work, and was first
+      spotted from the outside: another session, investigating a browser problem,
+      reported an orphaned 5354 in the resolver before any uninstall had run.
+
+      `dnsmasq_port()` in `lib/compose.sh` answers "is that port ours", found by
+      compose project label like `active_dir()`. `port_free_for_us()` in the
+      installer is the whole fix: a port we hold is free for our purposes, applied
+      both to the value in `.env` and to the candidate loop.
+
+      **The two branches are independently sufficient**, which the first
+      falsification attempt proved by accident: reverting only the `.env` branch
+      left the loop reaching the same answer, and the CI step still passed.
+      Reverting both makes it fail with `moved 5354 -> 5355`.
+
+      `port_busy` was also `ss`-only, so on macOS -- where `ss` does not exist --
+      it reported every port free. `lsof` covers that path now.
+
+      Nothing had ever compared the numbers, which is why it stayed invisible:
+      `--status` printed the resolver file and, separately, that the container was
+      running. It now prints what the resolver asks for, what `.env` says and what
+      dnsmasq publishes, and names the fix when they disagree.
+
 - [x] **42. `custom/php.d/*.ini` applies to every version, with no way to say
       "only 8.3"** — FIXED
       The mount and `PHP_INI_SCAN_DIR` live in one YAML anchor that all three PHP

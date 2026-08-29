@@ -92,6 +92,16 @@ profile_images() { _profile_extra images "$1" | sed 's|.*/||' | commas; }
 # pg18 -> postgres18dev ; search -> es8143dev, kibana  (one per line)
 profile_services() { _profile_extra services "$1"; }
 
+# The host port this project's dnsmasq publishes, or nothing when it is not
+# running. The installer needs it to tell "the port is taken" from "the port is
+# taken by us", which are opposite answers to the same question.
+dnsmasq_port() {
+    local project="${COMPOSE_PROJECT_NAME:-php-devforge}"
+    docker ps --filter "label=com.docker.compose.project=$project" \
+              --filter name=dnsmasq --format '{{.Ports}}' 2>/dev/null \
+        | sed -n 's/.*:\([0-9][0-9]*\)->53\/udp.*/\1/p' | head -1
+}
+
 # Which directory the running containers came from, or nothing when none are
 # running. COMPOSE_PROJECT_NAME is a fixed literal, so every checkout claims the
 # same project and containers started elsewhere look like ours; compose records

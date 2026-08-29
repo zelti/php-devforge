@@ -86,7 +86,22 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 info "docker compose v2 available"
 
-port_busy() { ss -lntu 2>/dev/null | grep -qE "[:.]${1}[[:space:]]"; }
+# ss is Linux-only; without the fallback macOS reports every port free.
+port_busy() {
+    if command -v ss >/dev/null 2>&1; then
+        ss -lntu 2>/dev/null | grep -qE "[:.]${1}[[:space:]]"
+    else
+        lsof -nP -iUDP:"$1" -iTCP:"$1" >/dev/null 2>&1
+    fi
+}
+
+# A port our own dnsmasq holds is not a conflict: re-running the installer with
+# the stack up used to walk DNS_PORT forward (5354 busy -> 5355 free), and with
+# --skip-dns the resolver kept pointing at the old one, so the domain stopped
+# resolving with nothing said.
+port_free_for_us() {
+    ! port_busy "$1" || [ "$1" = "$(dnsmasq_port)" ]
+}
 
 for p in 80 443; do
     if port_busy "$p"; then
@@ -248,17 +263,17 @@ esac
 # ---------- free DNS port ----------
 if [ -n "$OPT_DNS_PORT" ]; then
     DNSP="$OPT_DNS_PORT"
-elif [ -n "$DEF_DNS_PORT" ] && ! port_busy "$DEF_DNS_PORT"; then
+elif [ -n "$DEF_DNS_PORT" ] && port_free_for_us "$DEF_DNS_PORT"; then
     DNSP="$DEF_DNS_PORT"
 else
     echo "  Looking for a free DNS port..."
     DNSP=""
     for c in 5354 5355 5356 15353 15354; do
-        if port_busy "$c"; then
-            echo "    $c busy"
-        else
+        if port_free_for_us "$c"; then
             echo "    $c free"
             DNSP="$c"; break
+        else
+            echo "    $c busy"
         fi
     done
     [ -z "$DNSP" ] && { err "No free port found. Pass --dns-port=N."; exit 1; }
@@ -470,6 +485,19 @@ else
     warn "Skipped. Run ./install_cert.sh when you want HTTPS."
 fi
 
+# Skipping the DNS step is normal on a re-run, and it is exactly when the
+# resolver can end up pointed at a port this .env no longer uses. Saying nothing
+# there is how a machine ends up with the domain not resolving and no clue why.
+dns_mismatch() {
+    local asked
+    asked="$(sed -n 's/^DNS=.*:\([0-9][0-9]*\) *$/\1/p' \
+             /etc/systemd/resolved.conf.d/50-php-devforge.conf 2>/dev/null | head -1)"
+    [ -z "$asked" ] && asked="$(sed -n 's/^port  *\([0-9][0-9]*\).*/\1/p' \
+                                "/etc/resolver/${DOMAIN}" 2>/dev/null | head -1)"
+    [ -n "$asked" ] && [ "$asked" != "$DNSP" ] && { echo "$asked"; return 0; }
+    return 1
+}
+
 title "Local DNS"
 if [ "$SKIP_DNS" -eq 1 ]; then
     warn "Skipped (--skip-dns). Run ./setup-local-dns.sh later."
@@ -477,6 +505,13 @@ elif confirm "Point *.${DOMAIN} at this machine now? (asks for your password)"; 
     ./setup-local-dns.sh
 else
     warn "Skipped. Run ./setup-local-dns.sh later."
+fi
+
+if OLD_PORT="$(dns_mismatch)"; then
+    warn "Your system still resolves *.${DOMAIN} through port ${OLD_PORT}, and this"
+    echo "         configuration uses ${DNSP}. The domain will not resolve until they match:"
+    echo "             ./setup-local-dns.sh"
+    echo "         Check any time with:  forge dns status"
 fi
 
 title "Done"

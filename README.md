@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./logo.png" alt="PHP DevForge" width="300px" height="300px">
+  <img src="./logo.png" alt="PHP DevForge" width="300px">
 </p>
 
 # PHP DevForge

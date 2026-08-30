@@ -267,9 +267,24 @@ jobs:
 
       - name: the welcome page is served over HTTPS
         run: |
-          curl -fsS --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
-            https://welcome--sites.phpforge.dev/ > /tmp/welcome.txt
+          fetch() {
+            curl -fsS --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
+              https://welcome--sites.phpforge.dev/ > /tmp/welcome.txt
+          }
+          fetch
           grep -q "PHP DevForge is running" /tmp/welcome.txt
+
+          # The previous step waits for the default version to answer; the other
+          # two are containers that have started but whose entrypoint may not have
+          # reached php-fpm yet. The page probes port 9000, so it reports them as
+          # down until they listen -- correctly. Wait for the state being asserted.
+          for _ in $(seq 1 30); do
+            grep -q -- '--p83' /tmp/welcome.txt \
+              && grep -q -- '--p84' /tmp/welcome.txt \
+              && grep -q -- '--p85' /tmp/welcome.txt && break
+            sleep 1
+            fetch
+          done
 
           # It reports the request it is answering, so a wrong backend shows up here
           grep -q "$(docker compose exec -T php84dev php -r 'echo PHP_VERSION;')" /tmp/welcome.txt \

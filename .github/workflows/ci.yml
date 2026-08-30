@@ -523,8 +523,7 @@ jobs:
           # The README now sends new users to the short welcome URL, so it is no
           # longer only the long form that has to answer.
           get welcome                  | grep -q "PHP DevForge is running"
-          # and it says who is serving it, which is the point of switching
-          get welcome                  | grep -q "nginx"
+          get welcome                  | grep -q "Apache"
           get my-app                   | grep -q "my-app on PHP"   # sites/ shortcut
           get v2--api                  | grep -q "nested ok"       # nested under sites/
           get public--my-app--projects | grep -q "my-app on PHP"   # full path still works
@@ -766,6 +765,8 @@ jobs:
             sleep 1
           done
           get() { curl -fsS -k --resolve "$1.phpforge.dev:443:127.0.0.1" "https://$1.phpforge.dev/"; }
+          # The welcome page names who served it, which is the point of switching
+          get welcome                | grep -q "nginx"
           get my-app--sites          | grep -q "PHP 8.4"
           get my-app--sites--p83     | grep -q "PHP 8.3"
           get my-app--sites--p85     | grep -q "PHP 8.5"

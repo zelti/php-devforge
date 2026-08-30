@@ -202,6 +202,7 @@ forge certs                  # regenerate the certificates
 forge dns status             # inspect the local DNS
 
 forge uninstall              # undo the install (see below)
+forge version
 forge help
 ```
 
@@ -601,6 +602,25 @@ CI builds all three PHP versions, runs the installer, configures DNS, checks tha
 `.php` is never served as source, that files created in the containers belong to
 you, and that both Apache and nginx serve the same sites. If it is green, it works
 somewhere other than your laptop.
+
+### Releasing
+
+The version lives in one file, `VERSION`, and `forge version` prints it with the
+commit you are on:
+
+```bash
+$ forge version
+PHP DevForge 0.1.0 (c45e1f3)
+```
+
+To cut one: bump `VERSION`, commit, then tag it.
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+CI refuses a `VERSION` that is not semver, and a tagged commit whose tag and
+`VERSION` disagree — so the two cannot drift.
 
 ### Running a CI step before you push
 

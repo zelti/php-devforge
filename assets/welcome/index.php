@@ -62,6 +62,12 @@ $projects = '__PROJECTS_DIR__';
 if (str_starts_with($projects, '__PROJECTS')) {
     $projects = dirname(dirname(dirname(__FILE__)));
 }
+
+// Also substituted at copy time -- the page cannot see the checkout.
+$version = '__FORGE_VERSION__';
+if (str_starts_with($version, '__FORGE')) {
+    $version = '';
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -168,6 +174,7 @@ footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--lin
     <a href="https://github.com/zelti/php-devforge#readme">Documentation</a> &middot;
     <a href="https://github.com/zelti/php-devforge/blob/main/README.es.md">en español</a> &middot;
     <code>forge help</code>
+    <?= $version !== '' ? '<br>PHP DevForge ' . htmlspecialchars($version) : '' ?>
   </footer>
 </main>
 </html>

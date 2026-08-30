@@ -203,6 +203,7 @@ forge certs                  # regenerar los certificados
 forge dns status             # ver el DNS local
 
 forge uninstall              # deshacer la instalación (ver más abajo)
+forge version
 forge help
 ```
 
@@ -593,6 +594,25 @@ La CI construye las tres versiones de PHP, ejecuta el instalador, configura el D
 comprueba que un `.php` nunca se sirve como código fuente, que los archivos creados
 en los contenedores son tuyos, y que Apache y nginx sirven lo mismo. Si está en
 verde, funciona en una máquina que no es la tuya.
+
+### Publicar una versión
+
+La versión vive en un solo archivo, `VERSION`, y `forge version` la imprime junto al
+commit en el que estás:
+
+```bash
+$ forge version
+PHP DevForge 0.1.0 (c45e1f3)
+```
+
+Para publicar una: sube el número en `VERSION`, haz commit y etiqueta.
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+La CI rechaza un `VERSION` que no sea semver, y un commit etiquetado cuya etiqueta y
+`VERSION` no coincidan — así no pueden separarse.
 
 ### Ejecutar un paso de la CI antes de subir
 

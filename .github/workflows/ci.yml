@@ -42,6 +42,20 @@ jobs:
           done
           exit $fail
 
+      # A version people can quote is only useful if it cannot drift from the tag
+      # the release was cut at.
+      - name: the version file and the tag agree
+        run: |
+          v="$(cat VERSION)"
+          echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "VERSION is not semver: '$v'"; exit 1; }
+
+          tag="$(git tag --points-at HEAD | grep '^v' | head -1 || true)"
+          if [ -n "$tag" ] && [ "$tag" != "v$v" ]; then
+            echo "tagged $tag but VERSION says $v"; exit 1
+          fi
+          test -n "$tag" && echo "released as $tag" || echo "$v, untagged commit"
+
       - name: the helper scripts compile
         run: |
           python3 -m py_compile .github/scripts/drive-install.py

@@ -282,9 +282,14 @@ jobs:
                   https://welcome--sites.phpforge.dev/logo.png)"
           test "$code" = 200 || { echo "logo.png: $code"; exit 1; }
 
-          # The panel is probed, not decorated: mail is on at this point, search is not
-          grep -q 'mail.phpforge.dev' /tmp/welcome.txt \
-            || { echo "mailpit is up but the page does not link it"; exit 1; }
+          # The panel is probed, not decorated. What is true right here: the three
+          # PHP containers are up (the previous step named them), and nothing has
+          # started Elasticsearch. Mail is enabled in .env but not running yet --
+          # asserted where it is started, further down.
+          for v in 83 84 85; do
+            grep -q -- "--p$v" /tmp/welcome.txt \
+              || { echo "php${v}dev is up but the page does not link it"; exit 1; }
+          done
           grep -q 'forge profile list' /tmp/welcome.txt
           if grep -q 'es8143dev:9200' /tmp/welcome.txt; then
             echo "it claims Elasticsearch is up, and nothing started it"; exit 1
@@ -636,6 +641,15 @@ jobs:
           forge db on pg18
           forge db on mariadb12
           forge mail on
+
+          # With them running, the welcome page has to show them. Same probe as
+          # above, opposite answer -- that is what makes it a probe.
+          curl -fsS --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
+            https://welcome--sites.phpforge.dev/ > /tmp/welcome2.txt
+          grep -q 'mail.phpforge.dev' /tmp/welcome2.txt \
+            || { echo "mailpit is up and the page does not link it"; exit 1; }
+          grep -q 'postgres18dev:5432' /tmp/welcome2.txt \
+            || { echo "pg18 is up and the page does not show it"; exit 1; }
           # Wait for the thing we actually need -- a connection from PHP with the real
           # credentials -- not for a readiness proxy. `mariadb-admin ping` answers on
           # the local socket seconds before the server accepts TCP connections and

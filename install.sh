@@ -19,6 +19,8 @@ title() { echo -e "\n${BLUE}$1${NC}"; }
 . ./lib/compose.sh
 # shellcheck source=lib/menu.sh
 . ./lib/menu.sh
+# shellcheck source=lib/version.sh
+. ./lib/version.sh
 
 ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0; SKIP_LINK=0; FORCE=0
 OPT_DOMAIN=""; OPT_DIR=""; OPT_PHP=""; OPT_DNS_PORT=""; OPT_IMAGES=""; OPT_PROFILES=""
@@ -366,7 +368,8 @@ PROFILES_LINE="$(printf '%s\n' "${PHP_PROFILES}${PROFILES:+,$PROFILES}" \
 title "Writing configuration"
 [ -f .env ] && cp .env ".env.backup" && warn "Previous .env saved as .env.backup"
 
-sed -e "s|^DEV_DOMAIN=.*|DEV_DOMAIN=${DOMAIN}|" \
+sed -e "s|^FORGE_VERSION=.*|FORGE_VERSION=$(cat VERSION 2>/dev/null || echo unknown)|" \
+    -e "s|^DEV_DOMAIN=.*|DEV_DOMAIN=${DOMAIN}|" \
     -e "s|^PROJECTS_DIR=.*|PROJECTS_DIR=${PROJ}|" \
     -e "s|^PHP_VERSION=.*|PHP_VERSION=${PHPV}|" \
     -e "s|^DNS_PORT=.*|DNS_PORT=${DNSP}|" \
@@ -453,7 +456,9 @@ welcome_is_ours() {
 if welcome_is_ours; then
     mkdir -p "$PROJ/sites/welcome"
     # The page shows a path you can type, which only this side knows.
-    sed "s|__PROJECTS_DIR__|${PROJ}|" assets/welcome/index.php > "$WELCOME"
+    sed -e "s|__PROJECTS_DIR__|${PROJ}|" \
+        -e "s|__FORGE_VERSION__|$(forge_version)|" \
+        assets/welcome/index.php > "$WELCOME"
     # Beside the page, so it works with no network.
     cp logo.png "$PROJ/sites/welcome/logo.png"
 fi

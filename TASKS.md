@@ -1456,6 +1456,40 @@ reasoning about them.
 
 ## 💡 Proposed while using it
 
+- [x] **45. Nothing says which php-devforge you are running** — FIXED
+      No `VERSION`, no git tags, no metadata, and every image tagged `:dev`. Fine
+      for one person on one checkout; useless the moment somebody reports
+      something, when the answer to *which version* is a commit sha you have to
+      ask for.
+
+      **A plain `VERSION` file, not JSON** — decided with the user. Everything
+      here is shell, and reading one line should not need `jq`; `composer.json` or
+      `package.json` would also misdescribe a project that is neither a library
+      nor a package. Starting at **0.1.0**: it works, but the `.env` format
+      changed three times in two weeks, and `1.0.0` promises a stability nobody
+      wants to promise yet.
+
+      `forge version` prints `0.1.0 (c45e1f3)` — the sha is the half that makes a
+      report actionable, and it simply disappears outside a git checkout
+      (verified on a copy with `.git` removed). It also shows in `forge status`,
+      in `forge help`, and in the welcome page footer.
+
+      **The real reason to have a number**: twice the tooling has had to guess how
+      old a `.env` is — `ensure_php_profiles()` reads "no `php*` entry means
+      pre-task-41", and the installer recognises its own old `custom/php.d` note
+      by its opening line. `FORGE_VERSION=` is now stamped into `.env` at install
+      time so the next migration compares numbers instead of inferring age. The
+      existing heuristics stay: they have to, for every file written before the
+      stamp existed.
+
+      A lint step keeps `VERSION` and the git tag from drifting. Falsified both
+      ways: a non-semver `VERSION`, and a `v0.9.9` tag on a commit that says
+      `0.1.0`.
+
+      Deliberately out of scope: tagging the images with the version instead of
+      `:dev`. That belongs to the first real release, not to the file that names
+      it.
+
 - [x] **44. The welcome page proves PHP runs and says nothing else** — FIXED
       Three lines of `printf`. It is the first thing a new install shows and the
       natural place to look when something is off, so it now answers *what is

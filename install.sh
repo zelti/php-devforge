@@ -439,13 +439,23 @@ fi
 
 # ---------- projects folder ----------
 mkdir -p "$PROJ/projects" "$PROJ/sites"
-if [ ! -e "$PROJ/sites/welcome/index.php" ]; then
+# The welcome page lives in your projects folder but is ours to keep current:
+# rewritten while it carries the header assets/welcome/index.php starts with, or
+# while it is still the three-line printf() the first version shipped. Edit it and
+# both markers go, and so does the rewriting.
+WELCOME="$PROJ/sites/welcome/index.php"
+welcome_is_ours() {
+    [ -f "$WELCOME" ] || return 0
+    head -1 "$WELCOME" | grep -q 'written by install.sh' && return 0
+    head -3 "$WELCOME" | grep -q 'printf("PHP DevForge is running' && return 0
+    return 1
+}
+if welcome_is_ours; then
     mkdir -p "$PROJ/sites/welcome"
-    cat > "$PROJ/sites/welcome/index.php" <<'PHP'
-<?php
-printf("PHP DevForge is running.\n\nPHP %s\nHost %s\nFile %s\n",
-    PHP_VERSION, $_SERVER['HTTP_HOST'] ?? 'cli', __FILE__);
-PHP
+    # The page shows a path you can type, which only this side knows.
+    sed "s|__PROJECTS_DIR__|${PROJ}|" assets/welcome/index.php > "$WELCOME"
+    # Beside the page, so it works with no network.
+    cp logo.png "$PROJ/sites/welcome/logo.png"
 fi
 info "Projects folder: $PROJ"
 echo "      projects/  your code"

@@ -438,14 +438,23 @@ jobs:
           # "Started" is not "ready": Apache answers on 443 before the PHP
           # containers finish their entrypoint, and a proxy into that window
           # returns 503. Every request here goes through this.
+          # 60, not 30: this step recreates every container, and one run gave up
+          # at 44 seconds while its twin on the same commit passed. On exhaustion
+          # it says what was up at the time, so a future failure explains itself
+          # instead of printing an empty string.
           serve() { # host, path -> body, empty if it never answered
             local out=""
-            for _ in $(seq 1 30); do
+            for _ in $(seq 1 60); do
               out="$(curl -fsSk --max-time 5 --resolve "$1:443:127.0.0.1" \
                      "https://$1/$2" 2>/dev/null || true)"
               [ -n "$out" ] && break
               sleep 1
             done
+            if [ -z "$out" ]; then
+              echo "no answer from https://$1/$2 after 60 tries" >&2
+              docker compose ps >&2
+              docker compose logs --tail=20 apachedev >&2
+            fi
             printf '%s' "$out"
           }
 

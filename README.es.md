@@ -150,7 +150,9 @@ Y abre **https://welcome.phpforge.dev**.
    ```bash
    forge start
    ```
-   Comprueba que funciona: `https://welcome.phpforge.dev`
+   Comprueba que funciona: `https://welcome.phpforge.dev` — la página informa de
+   lo que hay corriendo de verdad: la versión de PHP y el servidor que responden,
+   qué otras versiones tienes instaladas y qué bases de datos y correo están arriba.
 
 ### 🧹 Desinstalar
 

@@ -268,8 +268,28 @@ jobs:
       - name: the welcome page is served over HTTPS
         run: |
           curl -fsS --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
-            https://welcome--sites.phpforge.dev/ | tee /tmp/welcome.txt
+            https://welcome--sites.phpforge.dev/ > /tmp/welcome.txt
           grep -q "PHP DevForge is running" /tmp/welcome.txt
+
+          # It reports the request it is answering, so a wrong backend shows up here
+          grep -q "$(docker compose exec -T php84dev php -r 'echo PHP_VERSION;')" /tmp/welcome.txt \
+            || { echo "the page does not name the PHP version serving it"; exit 1; }
+          grep -q 'Apache' /tmp/welcome.txt || { echo "it does not say who served it"; exit 1; }
+
+          # The logo travels with the page, so it works with no network
+          code="$(curl -fsS -o /dev/null -w '%{http_code}' \
+                  --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
+                  https://welcome--sites.phpforge.dev/logo.png)"
+          test "$code" = 200 || { echo "logo.png: $code"; exit 1; }
+
+          # The panel is probed, not decorated: mail is on at this point, search is not
+          grep -q 'mail.phpforge.dev' /tmp/welcome.txt \
+            || { echo "mailpit is up but the page does not link it"; exit 1; }
+          grep -q 'forge profile list' /tmp/welcome.txt
+          if grep -q 'es8143dev:9200' /tmp/welcome.txt; then
+            echo "it claims Elasticsearch is up, and nothing started it"; exit 1
+          fi
+          echo "the welcome page reports what is actually running"
 
       # Hyphens in project names were broken for a long time: mi-app--sites
       # resolved to sites/app/mi.
@@ -483,6 +503,8 @@ jobs:
           # The README now sends new users to the short welcome URL, so it is no
           # longer only the long form that has to answer.
           get welcome                  | grep -q "PHP DevForge is running"
+          # and it says who is serving it, which is the point of switching
+          get welcome                  | grep -q "nginx"
           get my-app                   | grep -q "my-app on PHP"   # sites/ shortcut
           get v2--api                  | grep -q "nested ok"       # nested under sites/
           get public--my-app--projects | grep -q "my-app on PHP"   # full path still works

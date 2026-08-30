@@ -1456,6 +1456,38 @@ reasoning about them.
 
 ## 💡 Proposed while using it
 
+- [x] **44. The welcome page proves PHP runs and says nothing else** — FIXED
+      Three lines of `printf`. It is the first thing a new install shows and the
+      natural place to look when something is off, so it now answers *what is
+      running here* instead of *PHP works*: the version and web server answering
+      this request, which PHP versions are installed, which databases and mail are
+      up, the `ln -s` line with your real path, and the logo.
+
+      Everything on it is **probed**, not described -- a TCP connect per service
+      with a 0.25 s timeout. Measured before designing it: on this machine 8.3 and
+      8.4 report as missing and 8.5, postgres18 and mailpit as up, which is exactly
+      the truth. Installed versions link to the same page through their `--pNN`
+      host, so one click shows it served by another version.
+
+      Which web server answered comes from `SERVER_SOFTWARE`, and was verified by
+      switching: `Apache 2.4.68` and, with the nginx profile on,
+      `nginx 1.31.1 (OpenResty)`.
+
+      It lives in `assets/welcome/index.php` rather than a heredoc inside the
+      installer, so it stays a PHP file that can be linted and diffed. The path in
+      the example is substituted at copy time: `__FILE__` only knows the container
+      path, and telling someone to `cd /home/php-devforge/public_html/sites` would
+      be useless.
+
+      Rewritten on re-install while it still carries its generated header or is
+      still the old `printf` -- otherwise nobody who already installed would ever
+      see it, which is what had happened to the `custom/php.d/` note.
+
+      Two things the served page showed that the source did not: `?>` swallows the
+      newline after it, so `cd <path>` and `ln -s` ran together; and the first
+      falsification of the CI step changed the probe target instead of making the
+      probe lie, so the assertion passed against a sabotaged page.
+
 - [x] **43. The installer counts its own dnsmasq as a conflict** — FIXED
       `install.sh` kept the port from `.env` only when nothing was listening on it,
       and the thing listening on it was our own dnsmasq. Re-running the installer

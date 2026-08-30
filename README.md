@@ -149,7 +149,9 @@ Then open **https://welcome.phpforge.dev**.
     ```
     Or `forge start`, which works from anywhere.
 
-    Check it works: `https://welcome.phpforge.dev`
+    Check it works: `https://welcome.phpforge.dev` — the page reports what is
+    actually running: the PHP version and web server answering, which other
+    versions are installed, and which databases and mail are up.
 
 ### 🧹 Uninstalling
 

@@ -505,7 +505,23 @@ forge profile on nginx     # stops apachedev; they cannot share the ports
 forge profile off nginx    # and brings it back
 ```
 
-It serves the same URLs, including nested paths and the `--pNN` version suffix.
+It serves the same URLs, including nested paths and the `--pNN` version suffix —
+for projects whose files map to URLs.
+
+**A framework will not route under it.** Laravel, Symfony and WordPress put their
+routing rule in `.htaccess`, and nginx does not read `.htaccess` at all: it is not a
+setting, it is a design decision of nginx. Our config answers `404` for anything that
+is not a real file, so the home page works and every other URL does not:
+
+```
+forge profile on nginx
+/         200
+/admin    404      # Laravel routes this; nginx never asks it
+```
+
+For those projects, stay on Apache — which is why it is the default. Teaching nginx
+to honour the front-controller rule is possible (the Lua that resolves the document
+root could read that one rule) and is not implemented.
 
 It is **OpenResty**, not stock nginx: the document root and the PHP backend are
 derived from the host name in Lua, which plain nginx cannot do. Swapping the base

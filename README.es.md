@@ -497,7 +497,23 @@ forge profile on nginx     # para apachedev; no pueden compartir los puertos
 forge profile off nginx    # y lo devuelve
 ```
 
-Sirve las mismas URLs, incluidas las rutas anidadas y el sufijo `--pNN`.
+Sirve las mismas URLs, incluidas las rutas anidadas y el sufijo `--pNN` — para
+proyectos cuyos archivos se corresponden con las URLs.
+
+**Un framework no enrutará con él.** Laravel, Symfony y WordPress ponen su regla de
+enrutado en el `.htaccess`, y nginx no lee `.htaccess` en absoluto: no es una opción,
+es una decisión de diseño de nginx. Nuestra configuración responde `404` a todo lo
+que no sea un archivo real, así que la portada funciona y ninguna otra URL:
+
+```
+forge profile on nginx
+/         200
+/admin    404      # Laravel resuelve esta ruta; nginx nunca se la pregunta
+```
+
+Para esos proyectos, quédate en Apache — que por eso es el predeterminado. Enseñarle
+a nginx a respetar la regla del front controller es posible (el Lua que resuelve el
+docroot podría leer esa única regla) y no está implementado.
 
 Es **OpenResty**, no nginx a secas: el docroot y el backend de PHP se derivan del
 nombre del host con Lua, y eso nginx normal no lo puede hacer. Cambiar la imagen base

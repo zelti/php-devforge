@@ -1456,6 +1456,37 @@ reasoning about them.
 
 ## 💡 Proposed while using it
 
+- [ ] **47. nginx could honour the front-controller rule** 💬 DISCUSS FIRST —
+      *documented as a limitation for now*
+      nginx 404s every URL but the home page for Laravel, Symfony and WordPress,
+      because the routing rule lives in `.htaccess` and nginx does not read it.
+      Found while fixing task 46; verified with the profile on: `/` 200,
+      `/admin` 404.
+
+      **Documented rather than fixed**, deliberately. The README claimed nginx
+      "serves the same URLs", which is the actual trap — someone switches, loses an
+      afternoon, and the limitation was knowable. That sentence is now honest, and
+      nobody is blocked: Apache is the default and reads `.htaccess` natively.
+
+      **The design, if it is ever wanted.** Not a blanket `try_files $uri $uri/
+      /index.php`: that imposes front-controller semantics on every project,
+      including static ones and plain multi-page PHP, where a typo would stop
+      being a 404. Instead, `resolve_docroot.lua` already computes the docroot per
+      request, so it can read that project's `.htaccess` and set a variable to the
+      target of a `RewriteRule` pointing at a `.php`; `try_files $uri $uri/ @front`
+      then either serves it or returns 404 when nothing declared one. The two
+      conditions Laravel writes -- `!-f` and `!-d` -- are literally what
+      `try_files` means, so this translates one rule rather than emulating
+      mod_rewrite.
+
+      A `NGINX_FRONT_CONTROLLER=auto|off` in `.env` would be a brake on the
+      heuristic, not a behaviour choice: with faithful detection, turning it off
+      only breaks your app.
+
+      Scope to state plainly in the docs if it ships: **one** rule of the
+      `.htaccess` is honoured, the routing one. Deny rules, auth and headers stay
+      ignored under nginx, and always will.
+
 - [x] **46. Every front controller project was broken past its home page** — FIXED
       Reported by another session installing a real Laravel app: `/` answered 200,
       `/admin` answered 500, and the request never reached php-fpm.

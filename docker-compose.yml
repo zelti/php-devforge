@@ -82,7 +82,8 @@ services:
   # OpenResty rather than plain nginx: the document root and the PHP backend come
   # from the host name in Lua, which stock nginx cannot do.
   #
-  # No .htaccess here. That is the reason Apache is the default.
+  # No .htaccess here, so a framework's routing rule is never read and every URL
+  # but the home page 404s. That is the reason Apache is the default.
   nginxdev:
     profiles: ["nginx"]
     build: ./docker-library/nginx

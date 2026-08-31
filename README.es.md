@@ -500,20 +500,30 @@ forge profile off nginx    # y lo devuelve
 Sirve las mismas URLs, incluidas las rutas anidadas y el sufijo `--pNN` — para
 proyectos cuyos archivos se corresponden con las URLs.
 
-**Un framework no enrutará con él.** Laravel, Symfony y WordPress ponen su regla de
-enrutado en el `.htaccess`, y nginx no lee `.htaccess` en absoluto: no es una opción,
-es una decisión de diseño de nginx. Nuestra configuración responde `404` a todo lo
-que no sea un archivo real, así que la portada funciona y ninguna otra URL:
+**Los frameworks también enrutan**, cosa que en nginx normalmente no ocurre. Laravel,
+Symfony y WordPress ponen su regla de enrutado en el `.htaccess`, y nginx no lee
+`.htaccess` — es una decisión de diseño suya, no una opción. Pero el Lua que ya
+resuelve el docroot lee **esa única** regla y se la pasa a un `try_files`:
 
-```
-forge profile on nginx
-/         200
-/admin    404      # Laravel resuelve esta ruta; nginx nunca se la pregunta
+```apache
+RewriteCond %{REQUEST_FILENAME} !-d      # lo que significa try_files $uri $uri/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [L]              # el destino al que cae
 ```
 
-Para esos proyectos, quédate en Apache — que por eso es el predeterminado. Enseñarle
-a nginx a respetar la regla del front controller es posible (el Lua que resuelve el
-docroot podría leer esa única regla) y no está implementado.
+Así, un proyecto enruta si dice que quiere, y el que no — un sitio estático, una
+carpeta de páginas `.php` — sigue respondiendo `404` a lo que no sea un archivo. Con
+`NGINX_FRONT_CONTROLLER` en `.env` lo cambias:
+
+| | |
+|---|---|
+| `auto` (por defecto) | respeta la regla que el proyecto declara en su `.htaccess` |
+| `always` | trata `index.php` como front controller aunque no haya `.htaccess` — Symfony sin `apache-pack`, WordPress antes de guardar sus enlaces permanentes |
+| `off` | nginx a secas: `404` para todo lo que no sea un archivo |
+
+**Solo se lee la regla de enrutado.** Las de denegación, `AuthType`, cabeceras y todo
+lo demás del `.htaccess` siguen ignoradas bajo nginx, y lo estarán siempre. Por eso
+Apache sigue siendo el predeterminado.
 
 Es **OpenResty**, no nginx a secas: el docroot y el backend de PHP se derivan del
 nombre del host con Lua, y eso nginx normal no lo puede hacer. Cambiar la imagen base

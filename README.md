@@ -508,20 +508,31 @@ forge profile off nginx    # and brings it back
 It serves the same URLs, including nested paths and the `--pNN` version suffix —
 for projects whose files map to URLs.
 
-**A framework will not route under it.** Laravel, Symfony and WordPress put their
-routing rule in `.htaccess`, and nginx does not read `.htaccess` at all: it is not a
-setting, it is a design decision of nginx. Our config answers `404` for anything that
-is not a real file, so the home page works and every other URL does not:
+**Frameworks route under it too**, which they normally do not on nginx. Laravel,
+Symfony and WordPress put their routing rule in `.htaccess`, and nginx does not read
+`.htaccess` — that is a design decision of nginx, not a setting. But the Lua that
+already resolves the document root reads that **one** rule and hands it to a
+`try_files` fallback:
 
-```
-forge profile on nginx
-/         200
-/admin    404      # Laravel routes this; nginx never asks it
+```apache
+RewriteCond %{REQUEST_FILENAME} !-d      # what try_files $uri $uri/ means
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [L]              # the target it falls back to
 ```
 
-For those projects, stay on Apache — which is why it is the default. Teaching nginx
-to honour the front-controller rule is possible (the Lua that resolves the document
-root could read that one rule) and is not implemented.
+So a project routes if it says it wants to, and one that does not — a static site, a
+folder of `.php` pages — keeps answering `404` for URLs that are not files. Set
+`NGINX_FRONT_CONTROLLER` in `.env` to change that:
+
+| | |
+|---|---|
+| `auto` (default) | honour the rule the project declares in its `.htaccess` |
+| `always` | treat `index.php` as the front controller even with no `.htaccess` — Symfony without `apache-pack`, WordPress before its permalinks are saved |
+| `off` | plain nginx: `404` for anything that is not a file |
+
+**Only the routing rule is read.** Deny rules, `AuthType`, headers and everything
+else in a `.htaccess` stay ignored under nginx, and always will. That is still the
+reason Apache is the default.
 
 It is **OpenResty**, not stock nginx: the document root and the PHP backend are
 derived from the host name in Lua, which plain nginx cannot do. Swapping the base

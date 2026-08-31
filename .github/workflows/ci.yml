@@ -847,6 +847,38 @@ jobs:
           serves my-app--sites          "PHP 8.4"
           serves my-app--sites--p83     "PHP 8.3"
           serves my-app--sites--p85     "PHP 8.5"
+          # nginx cannot read .htaccess, so a framework normally 404s on every URL
+          # but its home page. The Lua reads the one rule that matters, and the
+          # three project types have to keep their own behaviour: an app routes,
+          # a static site and a folder of .php pages do not.
+          DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+          mkdir -p "$DIR/projects/nfwk/public" "$DIR/projects/nstatic/public"
+          {
+            echo 'RewriteEngine On'
+            echo 'RewriteCond %{REQUEST_FILENAME} !-d'
+            echo 'RewriteCond %{REQUEST_FILENAME} !-f'
+            echo 'RewriteRule ^ index.php [L]'
+          } > "$DIR/projects/nfwk/public/.htaccess"
+          printf '<?php echo "app routed";' > "$DIR/projects/nfwk/public/index.php"
+          printf '<h1>static</h1>' > "$DIR/projects/nstatic/public/index.html"
+          ln -sfn ../projects/nfwk/public "$DIR/sites/nfwk"
+          ln -sfn ../projects/nstatic/public "$DIR/sites/nstatic"
+
+          serves nfwk--sites "app routed"          # / works everywhere; this is the point
+          # No -f: the status is the assertion, so curl must not abort on 404 and
+          # take the message with it.
+          code="$(curl -sk -o /tmp/n.txt -w '%{http_code}' --resolve \
+                  nfwk--sites.phpforge.dev:443:127.0.0.1 \
+                  https://nfwk--sites.phpforge.dev/admin)"
+          test "$code" = 200 || { echo "the framework did not route: /admin answered $code"; exit 1; }
+          grep -q 'app routed' /tmp/n.txt || { cat /tmp/n.txt; exit 1; }
+
+          code="$(curl -sk -o /dev/null -w '%{http_code}' --resolve \
+                  nstatic--sites.phpforge.dev:443:127.0.0.1 \
+                  https://nstatic--sites.phpforge.dev/admin)"
+          test "$code" = 404 || { echo "a static site should 404, answered $code"; exit 1; }
+          echo "frameworks route, static sites do not"
+
           # The Lua sets an unroutable backend when it cannot work out a version, so a
           # .php fails closed instead of being served as a static file.
           for h in my-app--sites my-app--sites--p99; do

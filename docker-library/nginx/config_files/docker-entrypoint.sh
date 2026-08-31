@@ -13,6 +13,10 @@
 #
 set -e
 
+# auto: honour a front-controller rule found in the project's .htaccess.
+# off: never look, and 404 anything that is not a file, as nginx does bare.
+export NGINX_FRONT_CONTROLLER="${NGINX_FRONT_CONTROLLER:-auto}"
+
 REAL_CERT="/etc/nginx/ssl/php-devforge.pem"
 REAL_KEY="/etc/nginx/ssl/php-devforge.key"
 FALLBACK_DIR="/etc/nginx/ssl-fallback"
@@ -40,9 +44,9 @@ else
 fi
 
 # The variable list is explicit so nginx's own $mail and $subdomains survive.
-envsubst '$DEV_DOMAIN $PHP_VERSION $ENABLED_PROFILES $SSL_CERT $SSL_KEY' \
+envsubst '$DEV_DOMAIN $PHP_VERSION $ENABLED_PROFILES $NGINX_FRONT_CONTROLLER $SSL_CERT $SSL_KEY' \
     < /etc/nginx/conf.d/site.conf.tpl > /etc/nginx/conf.d/site.conf
-envsubst '$DEV_DOMAIN $PHP_VERSION $ENABLED_PROFILES $SSL_CERT $SSL_KEY' \
+envsubst '$DEV_DOMAIN $PHP_VERSION $ENABLED_PROFILES $NGINX_FRONT_CONTROLLER $SSL_CERT $SSL_KEY' \
     < /etc/nginx/conf.d/common_server_config.conf.tpl > /etc/nginx/snippets/common_server_config.conf
 
 exec "$@"

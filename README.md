@@ -520,9 +520,10 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ index.php [L]              # the target it falls back to
 ```
 
-So a project routes if it says it wants to, and one that does not — a static site, a
-folder of `.php` pages — keeps answering `404` for URLs that are not files. Set
-`NGINX_FRONT_CONTROLLER` in `.env` to change that:
+A built SPA declares the same thing with `index.html` as the target, and that is
+served rather than passed to PHP. So a project routes if it says it wants to, and one
+that does not — a static site, a folder of `.php` pages — keeps answering `404` for
+URLs that are not files. Set `NGINX_FRONT_CONTROLLER` in `.env` to change that:
 
 | | |
 |---|---|
@@ -531,8 +532,10 @@ folder of `.php` pages — keeps answering `404` for URLs that are not files. Se
 | `off` | plain nginx: `404` for anything that is not a file |
 
 **Only the routing rule is read.** Deny rules, `AuthType`, headers and everything
-else in a `.htaccess` stay ignored under nginx, and always will. That is still the
-reason Apache is the default.
+else in a `.htaccess` stay ignored under nginx, and always will. One corner also
+differs: a URL ending in `.php` inside a project whose front controller is an
+`index.html` answers `404` here and the shell under Apache. That is still the reason
+Apache is the default.
 
 It is **OpenResty**, not stock nginx: the document root and the PHP backend are
 derived from the host name in Lua, which plain nginx cannot do. Swapping the base

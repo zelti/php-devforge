@@ -852,7 +852,8 @@ jobs:
           # three project types have to keep their own behaviour: an app routes,
           # a static site and a folder of .php pages do not.
           DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
-          mkdir -p "$DIR/projects/nfwk/public" "$DIR/projects/nstatic/public"
+          mkdir -p "$DIR/projects/nfwk/public" "$DIR/projects/nstatic/public" \
+                   "$DIR/projects/nspa/public"
           {
             echo 'RewriteEngine On'
             echo 'RewriteCond %{REQUEST_FILENAME} !-d'
@@ -861,8 +862,17 @@ jobs:
           } > "$DIR/projects/nfwk/public/.htaccess"
           printf '<?php echo "app routed";' > "$DIR/projects/nfwk/public/index.php"
           printf '<h1>static</h1>' > "$DIR/projects/nstatic/public/index.html"
+          # A built SPA declares a front controller too, and it is not a .php:
+          # index.html has to be served, not handed to php-fpm.
+          {
+            echo 'RewriteEngine On'
+            echo 'RewriteCond %{REQUEST_FILENAME} !-f'
+            echo 'RewriteRule ^ index.html [QSA,L]'
+          } > "$DIR/projects/nspa/public/.htaccess"
+          printf '<h1>spa shell</h1>' > "$DIR/projects/nspa/public/index.html"
           ln -sfn ../projects/nfwk/public "$DIR/sites/nfwk"
           ln -sfn ../projects/nstatic/public "$DIR/sites/nstatic"
+          ln -sfn ../projects/nspa/public "$DIR/sites/nspa"
 
           serves nfwk--sites "app routed"          # / works everywhere; this is the point
           # No -f: the status is the assertion, so curl must not abort on 404 and
@@ -873,11 +883,17 @@ jobs:
           test "$code" = 200 || { echo "the framework did not route: /admin answered $code"; exit 1; }
           grep -q 'app routed' /tmp/n.txt || { cat /tmp/n.txt; exit 1; }
 
+          code="$(curl -sk -o /tmp/n.txt -w '%{http_code}' --resolve \
+                  nspa--sites.phpforge.dev:443:127.0.0.1 \
+                  https://nspa--sites.phpforge.dev/dashboard)"
+          test "$code" = 200 || { echo "the SPA did not route: /dashboard answered $code"; exit 1; }
+          grep -q 'spa shell' /tmp/n.txt || { cat /tmp/n.txt; exit 1; }
+
           code="$(curl -sk -o /dev/null -w '%{http_code}' --resolve \
                   nstatic--sites.phpforge.dev:443:127.0.0.1 \
                   https://nstatic--sites.phpforge.dev/admin)"
           test "$code" = 404 || { echo "a static site should 404, answered $code"; exit 1; }
-          echo "frameworks route, static sites do not"
+          echo "apps and SPAs route, static sites do not"
 
           # The Lua sets an unroutable backend when it cannot work out a version, so a
           # .php fails closed instead of being served as a static file.

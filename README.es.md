@@ -511,9 +511,10 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ index.php [L]              # el destino al que cae
 ```
 
-Así, un proyecto enruta si dice que quiere, y el que no — un sitio estático, una
-carpeta de páginas `.php` — sigue respondiendo `404` a lo que no sea un archivo. Con
-`NGINX_FRONT_CONTROLLER` en `.env` lo cambias:
+Un SPA compilado declara lo mismo con `index.html` como destino, y ese se sirve en
+vez de pasarlo a PHP. Así, un proyecto enruta si dice que quiere, y el que no — un
+sitio estático, una carpeta de páginas `.php` — sigue respondiendo `404` a lo que no
+sea un archivo. Con `NGINX_FRONT_CONTROLLER` en `.env` lo cambias:
 
 | | |
 |---|---|
@@ -522,8 +523,10 @@ carpeta de páginas `.php` — sigue respondiendo `404` a lo que no sea un archi
 | `off` | nginx a secas: `404` para todo lo que no sea un archivo |
 
 **Solo se lee la regla de enrutado.** Las de denegación, `AuthType`, cabeceras y todo
-lo demás del `.htaccess` siguen ignoradas bajo nginx, y lo estarán siempre. Por eso
-Apache sigue siendo el predeterminado.
+lo demás del `.htaccess` siguen ignoradas bajo nginx, y lo estarán siempre. Hay además
+un caso que difiere: una URL terminada en `.php` dentro de un proyecto cuyo front
+controller es un `index.html` responde `404` aquí y la shell en Apache. Por eso Apache
+sigue siendo el predeterminado.
 
 Es **OpenResty**, no nginx a secas: el docroot y el backend de PHP se derivan del
 nombre del host con Lua, y eso nginx normal no lo puede hacer. Cambiar la imagen base

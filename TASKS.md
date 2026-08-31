@@ -1491,11 +1491,25 @@ reasoning about them.
 
       Measured under nginx, all three project types, which is the whole point:
 
-      | | /admin | /about.php | /no-existe |
+      | | /dashboard | /about.php | /no-existe |
       |---|---|---|---|
-      | framework with `.htaccess` | routed | routed | routed |
+      | framework (`.htaccess` -> index.php) | routed | routed | routed |
+      | built SPA (`.htaccess` -> index.html) | shell | 404 | shell |
       | static site | 404 | 404 | 404 |
       | folder of `.php` pages | 404 | served | 404 |
+
+      The SPA row came from the user asking what a static site even is. A built
+      React or Vue app ships a `.htaccess` rewriting to `index.html`, which the
+      first version ignored -- it only matched `.php` targets -- so deep links
+      404ed under nginx while Apache served them. A static front controller is a
+      file to serve, not a script to run, and that distinction cost two attempts:
+      `try_files` serves within the current location, so an `index.html` reached
+      from the `.php` location was handed to php-fpm, which answers **403** by
+      `security.limit_extensions`. Hence two named locations, one per kind.
+
+      One corner is documented rather than fought: a `.php` URL inside a SPA
+      project answers 404 here and the shell under Apache, because nginx keeps the
+      FastCGI handler across that jump.
 
       A missing `.php` reaching the front controller rather than php-fpm's "File
       not found" came out of that table: Apache does the same with that

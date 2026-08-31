@@ -22,7 +22,7 @@ err()  { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 # Accepts 8.5 or 85; returns the compact form.
 normalise() {
     local v="${1//./}"
-    if ! printf '%s\n' "$(php_versions)" | grep -qx "$v"; then
+    if ! grep -qx "$v" <<<"$(php_versions)"; then
         err "Unknown PHP version: $1"
         echo "  available: $(php_versions | sed 's/\(.\)\(.\)/\1.\2/' | tr '\n' ' ')" >&2
         exit 1
@@ -48,7 +48,7 @@ need_env() {
 # it used to have rather than silently dropping two versions. The write makes
 # this a one-time notice.
 ensure_php_profiles() {
-    enabled_profiles | grep -qE '^php[0-9][0-9]$' && return 0
+    grep -qE '^php[0-9][0-9]$' <<<"$(enabled_profiles)" && return 0
     local versions keep add
     versions="$(php_versions)"
     [ -n "$versions" ] || return 0
@@ -102,13 +102,23 @@ check_owner() {
 # nginx replaces apachedev rather than joining it -- they publish the same
 # 80/443 -- but apachedev is in the default set, so a plain `up -d` starts it
 # again and the two race for the port. Every start goes through here.
+#
+# The pipelines in this file avoid `producer | grep -q`: grep exits at the first
+# match, the producer dies of EPIPE, and pipefail turns a match into a failure.
+# It made `forge mail on` answer "Unknown profile: mail" while listing mail as
+# available. Here-strings have no pipe.
 # The ${a[@]+...} form is for bash 3.2 on macOS, where an empty array under
 # `set -u` is an error.
 compose_up() {
     check_owner
     ensure_custom_dirs
-    local extra=()
-    if is_on nginx; then extra=(--scale apachedev=0); fi
+    # --scale applies to the set being started, so compose rejects it outright
+    # when specific services are named: `forge restart nginxdev` failed with
+    # "no such service: apachedev: disabled", exited 1 and recreated nothing.
+    # Naming a service means "just this one", and apachedev is not in that set.
+    local extra=() a named=0
+    for a in "$@"; do case "$a" in -*) ;; *) named=1 ;; esac; done
+    if [ "$named" -eq 0 ] && is_on nginx; then extra=(--scale apachedev=0); fi
     docker compose up -d "${extra[@]+"${extra[@]}"}" "$@"
 }
 
@@ -165,14 +175,14 @@ cmd_logs() {
     local arg="${1:-}"
     if [ -z "$arg" ]; then
         docker compose logs -f
-    elif printf '%s' "$arg" | grep -qE '^[0-9]+\.?[0-9]+$'; then
+    elif grep -qE '^[0-9]+\.?[0-9]+$' <<<"$arg"; then
         local v; v="$(normalise "$arg")"
         need_php "$v"
         docker compose logs -f "php${v}dev"
     else
         # Plain compose here, not compose_with_env: that one clears
         # COMPOSE_PROFILES, which would hide mailpit and the databases.
-        docker compose config --services | grep -qx "$arg" || {
+        grep -qx "$arg" <<<"$(docker compose config --services)" || {
             err "Unknown service: $arg"
             echo "  available: $(docker compose config --services | sort | paste -sd' ' -)" >&2
             exit 1
@@ -230,7 +240,7 @@ db_profiles() { profile_list | grep -E '^(pg[0-9]+|mariadb[0-9]+)$' || true; }
 # compose files define, installed or not.
 installed_versions() { enabled_profiles | sed -n 's/^php\([0-9][0-9]\)$/\1/p' | sort; }
 
-is_on() { enabled_profiles | grep -qx "$1"; }
+is_on() { grep -qx "$1" <<<"$(enabled_profiles)"; }
 
 # Two profiles are not plain add-ons, and saying so beats parsing YAML for it:
 # nginx publishes the same 80/443 as apachedev (docker-compose.yml:69,109), and
@@ -275,7 +285,7 @@ cmd_profile() {
             ;;
         on|off)
             [ -n "$name" ] || { err "which one? try: forge profile list"; exit 1; }
-            profile_list | grep -qx "$name" || {
+            grep -qx "$name" <<<"$(profile_list)" || {
                 err "Unknown profile: $name"
                 echo "  available: $(profile_list | paste -sd' ' -)" >&2; exit 1; }
 
@@ -319,7 +329,7 @@ cmd_db() {
             ;;
         on|off)
             [ -n "$name" ] || { err "which one? try: forge db list"; exit 1; }
-            db_profiles | grep -qx "$name" || {
+            grep -qx "$name" <<<"$(db_profiles)" || {
                 err "Unknown database: $name"
                 echo "  available: $(db_profiles | paste -sd' ' -)" >&2; exit 1; }
             cmd_profile "$action" "$name"

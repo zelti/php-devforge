@@ -91,7 +91,7 @@ info "docker compose v2 available"
 # ss is Linux-only; without the fallback macOS reports every port free.
 port_busy() {
     if command -v ss >/dev/null 2>&1; then
-        ss -lntu 2>/dev/null | grep -qE "[:.]${1}[[:space:]]"
+        grep -qE "[:.]${1}[[:space:]]" <<<"$(ss -lntu 2>/dev/null)"
     else
         lsof -nP -iUDP:"$1" -iTCP:"$1" >/dev/null 2>&1
     fi
@@ -160,7 +160,7 @@ DEF_PHP="${PHP_VERSION:-84}"
 DEF_DNS_PORT="${DNS_PORT:-}"
 case "${IMAGE_MODE:-missing}" in build) DEF_IMAGES="build" ;; *) DEF_IMAGES="pull" ;; esac
 
-valid_profile() { printf '%s\n' "$ALL_PROFILES" | grep -qx "$1"; }
+valid_profile() { grep -qx "$1" <<<"$ALL_PROFILES"; }
 
 title "Settings"
 DOMAIN="${OPT_DOMAIN:-$(ask "Development domain?" "$DEF_DOMAIN")}"
@@ -182,7 +182,7 @@ DEF_PHPS="$(printf '%s\n' "${COMPOSE_PROFILES:-}" | tr ',' '\n' \
 # "the lowest one you happen to have" is not a decision anybody made.
 default_php() { # picked versions -> the one to offer
     local picked="$1"
-    printf '%s\n' $picked | grep -qx "$DEF_PHP" && { echo "$DEF_PHP"; return; }
+    grep -qx "$DEF_PHP" <<<"$(printf '%s\n' $picked)" && { echo "$DEF_PHP"; return; }
     echo "${picked%% *}"
 }
 
@@ -242,7 +242,7 @@ case "$PROJ" in /*) ;; *) PROJ="$PWD/$PROJ" ;; esac
 PHP_PROFILES=""
 for v in $PHPS; do
     v="${v//./}"
-    printf '%s\n' "$PHP_LIST" | grep -qx "$v" || {
+    grep -qx "$v" <<<"$PHP_LIST" || {
         err "Unknown PHP version: $v"
         echo "  available: $(printf '%s\n' "$PHP_LIST" | paste -sd' ' -)" >&2
         exit 1
@@ -252,7 +252,7 @@ done
 [ -n "$PHP_PROFILES" ] || { err "Pick at least one PHP version."; exit 1; }
 
 # Nothing answers a host name without a --pNN suffix otherwise.
-printf '%s\n' $PHPS | tr -d . | grep -qx "$PHPV" || {
+grep -qx "$PHPV" <<<"$(printf '%s\n' $PHPS | tr -d .)" || {
     err "The default (${PHPV}) is not among the versions you picked: $PHPS"
     exit 1
 }

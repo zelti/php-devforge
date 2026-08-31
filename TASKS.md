@@ -1456,6 +1456,40 @@ reasoning about them.
 
 ## 💡 Proposed while using it
 
+- [x] **48. forge could report a match as an error, and refused to restart one
+      service** — FIXED
+      Two ways `forge` lied about what it had done, both found while working on
+      task 47.
+
+      **`forge mail on` answering "Unknown profile: mail" while listing mail as
+      available.** Caught in CI, one run green and its twin red on the same commit,
+      with the cause printed one line above the error:
+
+      ```
+      forge: line 224: printf: write error: Broken pipe
+      [ERROR] Unknown profile: mail
+        available: mail mariadb11 mariadb12 nginx pg16 pg17 ...
+      ```
+
+      `producer | grep -q` is a race under `pipefail`: grep exits at the first
+      match, the producer is left writing to a closed pipe, and the match becomes a
+      failure. The same class that broke CI two days earlier with `curl | grep -q`,
+      this time inside the tool. Every instance in `bin/forge` and `install.sh` is
+      now a here-string, which has no pipe -- twelve of them, including
+      `port_busy`, where a match meant "the port is free".
+
+      It does not reproduce on this machine (0 failures in 60 attempts, with the
+      old code too), which is the nature of the race and why the fix removes it
+      rather than chasing it. The CI line is the proof: the message contradicts
+      itself.
+
+      **`forge restart nginxdev` failing with "no such service: apachedev:
+      disabled".** `compose_up` adds `--scale apachedev=0` when nginx is on, and
+      compose rejects `--scale` for a service outside the set being started. It
+      exited 1 and recreated nothing, which cost an hour of believing an image had
+      not rebuilt. The flag is now added only when no service is named -- naming
+      one means "just this one", and apachedev is not in that set.
+
 - [x] **46. Every front controller project was broken past its home page** — FIXED
       Reported by another session installing a real Laravel app: `/` answered 200,
       `/admin` answered 500, and the request never reached php-fpm.

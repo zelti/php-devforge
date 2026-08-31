@@ -12,6 +12,40 @@
 
 local BASE = "/home/php-devforge/public_html"
 
+-- nginx never reads .htaccess -- that is a design decision of nginx, not a
+-- setting. But the one rule that matters for a framework is expressible here:
+--
+--     RewriteCond %{REQUEST_FILENAME} !-d     ->  try_files $uri $uri/ ...
+--     RewriteCond %{REQUEST_FILENAME} !-f
+--     RewriteRule ^ index.php [L]             ->  ... @front_controller
+--
+-- Those two conditions are literally what try_files means, so this translates
+-- one rule instead of emulating mod_rewrite. Everything else in the file --
+-- deny rules, auth, headers -- stays ignored, and always will.
+--
+-- Reading it per request rather than caching: the file is a few hundred bytes,
+-- the page cache has it, and a dev environment where dropping a .htaccess in
+-- takes effect immediately is worth more than the microseconds.
+local function front_controller(docroot)
+    local f = io.open(docroot .. "/.htaccess", "r")
+    if not f then return "" end
+    local body = f:read("*a") or ""
+    f:close()
+
+    for line in body:gmatch("[^\r\n]+") do
+        if not line:match("^%s*#") then
+            -- "RewriteRule ^ index.php [L]", "RewriteRule ^(.*)$ /index.php [L]".
+            -- A target of "-" (Laravel sets headers that way) never matches.
+            -- .php goes to the backend; anything else -- index.html for a built
+            -- SPA -- is a file to serve. Both are front controllers; only one
+            -- of them runs.
+            local target = line:match("^%s*RewriteRule%s+%S+%s+/?([%w%._%-/]+%.%a+)")
+            if target then return target end
+        end
+    end
+    return ""
+end
+
 -- True for a directory or a symlink to one. Opening a directory succeeds but
 -- reading it does not, which is enough to tell them apart without extra libraries.
 local function is_dir(path)
@@ -132,3 +166,29 @@ end
 local path = table.concat(reversed, "/")
 local shortcut = BASE .. "/sites/" .. path
 ngx.var.docroot = is_dir(shortcut) and shortcut or (BASE .. "/" .. path)
+
+-- Off is a brake on the guessing, not a behaviour choice: with the rule read
+-- from the project's own file, turning it off only breaks the app.
+-- auto:   honour the rule the project declares in its own .htaccess
+-- always: assume index.php is one, for a framework that ships no .htaccess --
+--         Symfony without apache-pack, WordPress before permalinks are saved
+-- off:    plain nginx, 404 for anything that is not a file
+local function declare(target)
+    if target == "" then return end
+    if target:match("%.php$") then
+        ngx.var.front_controller = target
+    else
+        ngx.var.front_file = "/" .. target
+    end
+end
+
+if ngx.var.fc_mode == "always" then
+    local declared = front_controller(ngx.var.docroot)
+    if declared == "" and is_dir(ngx.var.docroot) then
+        local f = io.open(ngx.var.docroot .. "/index.php", "r")
+        if f then f:close(); declared = "index.php" end
+    end
+    declare(declared)
+elseif ngx.var.fc_mode ~= "off" then
+    declare(front_controller(ngx.var.docroot))
+end

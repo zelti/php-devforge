@@ -1490,6 +1490,68 @@ reasoning about them.
       not rebuilt. The flag is now added only when no service is named -- naming
       one means "just this one", and apachedev is not in that set.
 
+- [x] **47. nginx now honours the front-controller rule** — DONE
+      nginx 404s every URL but the home page for Laravel, Symfony and WordPress,
+      because the routing rule lives in `.htaccess` and nginx does not read it.
+      Found while fixing task 46; verified with the profile on: `/` 200,
+      `/admin` 404.
+
+      The README also claimed nginx "serves the same URLs", which was the actual
+      trap — someone switches, loses an afternoon, and the limitation was knowable.
+      That sentence is honest now, and the limitation is gone for the case that
+      matters.
+
+      **Decided with the user**, who asked for it on by default: "casi el 95% de
+      las personas usan un framework". It is `auto` by default, and the reading of
+      the project's own file is what makes that safe rather than imposed.
+
+      **The design, if it is ever wanted.** Not a blanket `try_files $uri $uri/
+      /index.php`: that imposes front-controller semantics on every project,
+      including static ones and plain multi-page PHP, where a typo would stop
+      being a 404. Instead, `resolve_docroot.lua` already computes the docroot per
+      request, so it can read that project's `.htaccess` and set a variable to the
+      target of a `RewriteRule` pointing at a `.php`; `try_files $uri $uri/ @front`
+      then either serves it or returns 404 when nothing declared one. The two
+      conditions Laravel writes -- `!-f` and `!-d` -- are literally what
+      `try_files` means, so this translates one rule rather than emulating
+      mod_rewrite.
+
+      `NGINX_FRONT_CONTROLLER` in `.env` has three values. `auto` reads the
+      project's `.htaccess`; `off` is plain nginx; and `always` treats `index.php`
+      as the front controller even with no `.htaccess`, which the user asked about
+      and was right to — Laravel ships one in its skeleton (checked in a real
+      installation), but Symfony needs `apache-pack` and WordPress only writes one
+      when its permalinks are saved.
+
+      Measured under nginx, all three project types, which is the whole point:
+
+      | | /dashboard | /about.php | /no-existe |
+      |---|---|---|---|
+      | framework (`.htaccess` -> index.php) | routed | routed | routed |
+      | built SPA (`.htaccess` -> index.html) | shell | 404 | shell |
+      | static site | 404 | 404 | 404 |
+      | folder of `.php` pages | 404 | served | 404 |
+
+      The SPA row came from the user asking what a static site even is. A built
+      React or Vue app ships a `.htaccess` rewriting to `index.html`, which the
+      first version ignored -- it only matched `.php` targets -- so deep links
+      404ed under nginx while Apache served them. A static front controller is a
+      file to serve, not a script to run, and that distinction cost two attempts:
+      `try_files` serves within the current location, so an `index.html` reached
+      from the `.php` location was handed to php-fpm, which answers **403** by
+      `security.limit_extensions`. Hence two named locations, one per kind.
+
+      One corner is documented rather than fought: a `.php` URL inside a SPA
+      project answers 404 here and the shell under Apache, because nginx keeps the
+      FastCGI handler across that jump.
+
+      A missing `.php` reaching the front controller rather than php-fpm's "File
+      not found" came out of that table: Apache does the same with that
+      `.htaccess`, and the app renders its own 404.
+
+      Scope, stated in both READMEs: **one** rule is honoured, the routing one.
+      Deny rules, auth and headers stay ignored under nginx, and always will.
+
 - [x] **46. Every front controller project was broken past its home page** — FIXED
       Reported by another session installing a real Laravel app: `/` answered 200,
       `/admin` answered 500, and the request never reached php-fpm.

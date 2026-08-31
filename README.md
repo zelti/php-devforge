@@ -505,7 +505,37 @@ forge profile on nginx     # stops apachedev; they cannot share the ports
 forge profile off nginx    # and brings it back
 ```
 
-It serves the same URLs, including nested paths and the `--pNN` version suffix.
+It serves the same URLs, including nested paths and the `--pNN` version suffix —
+for projects whose files map to URLs.
+
+**Frameworks route under it too**, which they normally do not on nginx. Laravel,
+Symfony and WordPress put their routing rule in `.htaccess`, and nginx does not read
+`.htaccess` — that is a design decision of nginx, not a setting. But the Lua that
+already resolves the document root reads that **one** rule and hands it to a
+`try_files` fallback:
+
+```apache
+RewriteCond %{REQUEST_FILENAME} !-d      # what try_files $uri $uri/ means
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [L]              # the target it falls back to
+```
+
+A built SPA declares the same thing with `index.html` as the target, and that is
+served rather than passed to PHP. So a project routes if it says it wants to, and one
+that does not — a static site, a folder of `.php` pages — keeps answering `404` for
+URLs that are not files. Set `NGINX_FRONT_CONTROLLER` in `.env` to change that:
+
+| | |
+|---|---|
+| `auto` (default) | honour the rule the project declares in its `.htaccess` |
+| `always` | treat `index.php` as the front controller even with no `.htaccess` — Symfony without `apache-pack`, WordPress before its permalinks are saved |
+| `off` | plain nginx: `404` for anything that is not a file |
+
+**Only the routing rule is read.** Deny rules, `AuthType`, headers and everything
+else in a `.htaccess` stay ignored under nginx, and always will. One corner also
+differs: a URL ending in `.php` inside a project whose front controller is an
+`index.html` answers `404` here and the shell under Apache. That is still the reason
+Apache is the default.
 
 It is **OpenResty**, not stock nginx: the document root and the PHP backend are
 derived from the host name in Lua, which plain nginx cannot do. Swapping the base

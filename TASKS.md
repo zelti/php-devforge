@@ -1786,3 +1786,63 @@ reasoning about them.
       ones keep serving, and the pty driver answers the two new questions. Each new
       CI assertion was falsified once — the page step by blanking `ENABLED_PROFILES`,
       the migration step by removing the call from `need_env`.
+
+- [x] **49. A skill so an AI agent can drive this, and the command it needed
+      first** — DONE
+      Prompted by a real command another session had to write to build a project:
+
+      ```
+      docker exec -u php-devforge -w /home/php-devforge/public_html/projects/backerone \
+        php85dev bash -lc 'pnpm run build'
+      ```
+
+      Five things it had to know, none of them discoverable: the fixed container
+      path, the `php-devforge` user, which container serves this project, that
+      `bash -lc` is required because node and pnpm come from nvm, and that `-it`
+      must be dropped when nothing is a terminal. `forge` had no command for it —
+      `forge shell` is interactive only. So the task was both halves: a command
+      worth documenting, then the document.
+
+      **`forge run`.** `forge run pnpm build` in the folder you are in, `-C` to
+      name a project from anywhere, `-p` for one version. A `container_path()`
+      helper translates the host directory into the mounted one; running outside
+      the projects folder is an error naming the fix, not a silent fallback to the
+      root — a build in the wrong directory is worse than no build. `-t` only when
+      both ends are a terminal, and the command's own exit status comes back.
+
+      **The skill**, `skills/php-devforge/SKILL.md`, covers using *and*
+      administering: commands, URLs, databases and SMTP, what is live and what
+      needs a restart, the forge commands that manage versions and profiles, and
+      the traps.
+
+      **How it reaches agents that are not Claude.** One file, two wrappers:
+      Claude Code gets a symlink in `~/.claude/skills/` (loaded on demand, so it
+      can be the whole file); Codex, Gemini and opencode get a delimited block in
+      their global instructions file, which is in context for every session and
+      therefore gets a summary and the path. Targets are only offered when their
+      config folder already exists, so nothing is created for a tool that is not
+      installed. `forge skill on|off|status|path`, offered by the installer and
+      undone by the uninstaller.
+
+      **Two things found on the way, both older than this task.**
+
+      `forge shell`'s "keep your current directory" never worked. Line 10 is
+      `cd "$FORGE_DIR"`, so by the time the case statement tested `$PWD` it was
+      always the checkout, which is not under `PROJECTS_DIR` — every shell landed
+      in `/home/php-devforge` and nobody noticed, because that is a plausible
+      place to land. The invocation directory is now captured before the `cd`,
+      which is what `forge run` needs anyway. Had the case ever matched it would
+      have failed outright: it passed the host path to `docker exec -w`.
+
+      `install.sh --help` printed the whole of `forge help` in the middle of its
+      option list. The usage heredoc is unquoted so it can interpolate `$0`, and
+      the line documenting `--skip-link` wrote the command in backticks.
+
+      Verified with a fake `HOME`: hooking up, a second run not duplicating the
+      block, and `forge skill off` giving a file with rules written after our
+      block back byte for byte. Both CI steps falsified — the round-trip one three
+      ways (append instead of rewrite, drop the blank-line accounting, invent a
+      config home), `forge run` three ways (drop `-l`, return the untranslated
+      path, swallow the exit status). The blank-line falsification passed at first:
+      the assertion only exercised a block at the end of the file, so the test
+      grew content after the block before it could catch anything.

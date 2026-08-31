@@ -21,8 +21,10 @@ title() { echo -e "\n${BLUE}$1${NC}"; }
 . ./lib/menu.sh
 # shellcheck source=lib/version.sh
 . ./lib/version.sh
+# shellcheck source=lib/skill.sh
+. ./lib/skill.sh
 
-ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0; SKIP_LINK=0; FORCE=0
+ASSUME_YES=0; SKIP_CERT=0; SKIP_DNS=0; SKIP_LINK=0; SKIP_SKILL=0; FORCE=0
 OPT_DOMAIN=""; OPT_DIR=""; OPT_PHP=""; OPT_DNS_PORT=""; OPT_IMAGES=""; OPT_PROFILES=""
 
 usage() {
@@ -39,7 +41,8 @@ Usage: $0 [OPTIONS]
   --images=pull|build   use the published images, or build your own (default: pull)
   --profiles=a,b        databases and extras to enable, e.g. pg18,mariadb12,mail
   --force               take over containers another checkout started
-  --skip-link           do not put `forge` on your PATH
+  --skip-link           do not put the forge command on your PATH
+  --skip-skill          do not offer the skill to the AI agents on this machine
   --skip-cert           do not generate certificates
   --skip-dns            do not touch the system DNS
   -y, --yes             accept every default, ask nothing
@@ -59,6 +62,7 @@ for arg in "$@"; do
         --profiles=*)     OPT_PROFILES="${arg#*=}" ;;
         --force)          FORCE=1 ;;
         --skip-link)      SKIP_LINK=1 ;;
+        --skip-skill)     SKIP_SKILL=1 ;;
         --skip-cert)      SKIP_CERT=1 ;;
         --skip-dns)       SKIP_DNS=1 ;;
         -y|--yes)         ASSUME_YES=1 ;;
@@ -489,6 +493,20 @@ else
                echo "      export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
         esac
     fi
+fi
+
+# Everything the skill teaches is a forge command, so it comes after the symlink.
+title "AI agents"
+SKILL_TARGETS="$(skill_targets)"
+if [ "$SKIP_SKILL" -eq 1 ]; then
+    warn "Skipped (--skip-skill). Turn it on later with: forge skill on"
+elif [ -z "$SKILL_TARGETS" ]; then
+    info "No AI agent found here. The file is there if you want it:"
+    echo "      $(skill_path)"
+elif confirm "Teach $(cut -f1 <<<"$SKILL_TARGETS" | commas) how to use PHP DevForge?"; then
+    skill_on || true
+else
+    warn "Skipped. Turn it on later with: forge skill on"
 fi
 
 title "Certificates"

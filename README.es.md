@@ -190,6 +190,7 @@ forge link ~/code/app/public # publicar un proyecto en app.<dominio>
 forge php list               # versiones de PHP, y cuáles están instaladas
 forge php on|off 8.3         # instalar una, o liberar los ~2 GB que ocupa
 forge use 8.5                # cambiar la versión por defecto (la instala si falta)
+forge run composer install   # ejecutar un comando en el contenedor correcto
 forge shell 8.4              # entrar a un contenedor
 forge logs 8.4               # seguir sus logs
 
@@ -201,6 +202,7 @@ forge mail on|off            # un buzón de pruebas en mail.<dominio>
 forge images build|pull      # construir en local, o usar las publicadas
 forge certs                  # regenerar los certificados
 forge dns status             # ver el DNS local
+forge skill status           # enseñarle a los agentes de IA a usar esto
 
 forge uninstall              # deshacer la instalación (ver más abajo)
 forge version
@@ -297,6 +299,31 @@ comando para añadirla, en vez de un 503 pelado.
 - No hay que reiniciar nada por un cambio de código
 - Entra a un contenedor con `forge shell 8.4`
 - Mira qué está pasando con `forge logs`
+
+### ⚙️ Ejecutar comandos en un proyecto
+
+`forge run` ejecuta un comando dentro del contenedor correcto, en la carpeta donde
+estás:
+
+```bash
+cd ~/php-devforge/projects/mi-app
+forge run composer install
+forge run pnpm run build
+forge run php artisan migrate
+
+forge run -p 8.3 php -v                    # otra versión, solo esta vez
+forge run -C projects/mi-app pnpm build    # desde donde sea
+```
+
+Existe porque escribirlo a mano tiene cuatro formas de salir mal. La carpeta de
+proyectos está montada en otra ruta adentro, así que pasar la del host falla con
+`chdir ... no such file or directory`. El usuario es `php-devforge`, no root. Node
+y pnpm vienen de nvm y solo están en el PATH de un shell de **login**, así que sin
+eso parecen no estar instalados. Y `-it` falla cuando no hay terminal — `forge
+run` lo agrega solo cuando la hay, que es lo mismo que mantiene los códigos de
+color fuera de la salida capturada.
+
+Devuelve el código de salida del comando, así que sirve dentro de un script.
 
 ### 🐞 Xdebug
 
@@ -534,6 +561,37 @@ por `nginx:alpine` no funcionaría.
 
 Son definiciones reales, no YAML comentado, así que `docker compose config` y la CI las
 siguen validando y no pueden romperse en silencio.
+
+## 🤖 Agentes de IA
+
+El repo trae un archivo de skill, `skills/php-devforge/SKILL.md`, que le enseña a
+un agente de IA cómo funciona este entorno: `forge run` en vez de `docker exec`,
+cómo una carpeta se convierte en URL, los datos de conexión a las bases y al
+correo, qué es inmediato y qué necesita reinicio, y las trampas.
+
+El instalador ofrece engancharlo, y después:
+
+```bash
+forge skill status     # qué agentes encontró, y cuáles están enganchados
+forge skill on         # todos, o: forge skill on codex
+forge skill off
+forge skill path       # imprime la ruta, para apuntar cualquier otra cosa
+```
+
+Solo se le ofrece a un agente cuya carpeta de configuración ya existe, así que no
+se crea nada para una herramienta que no usás. Dos formas, porque cada agente
+carga las instrucciones distinto:
+
+| Agente | Cómo |
+|---|---|
+| Claude Code | un symlink en `~/.claude/skills/`, se carga cuando hace falta |
+| Codex, Gemini, opencode | un bloque delimitado en su archivo global de instrucciones |
+
+El bloque es corto a propósito: un archivo global está en el contexto de cada
+sesión, así que lleva un resumen y la ruta al archivo completo. Va entre
+`<!-- php-devforge:start -->` y `<!-- php-devforge:end -->`, se reescribe en su
+lugar en vez de agregarse otra vez, y `forge skill off` saca el bloque y la línea
+en blanco de antes, dejando el resto del archivo intacto.
 
 ## 🛠️ Extensiones y herramientas
 

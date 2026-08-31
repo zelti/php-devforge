@@ -568,6 +568,40 @@ jobs:
           # and it must refuse a folder the containers cannot see
           if forge link /tmp 2>/dev/null; then echo "should have refused /tmp"; exit 1; fi
 
+      # Every Laravel, Symfony and WordPress project is a front controller, and
+      # every one of them was broken past its home page: mod_rewrite's per-directory
+      # hook runs before ours and leaves "redirect:/index.php" in the file name, so
+      # the backend became fcgi://phpNNdev:9000redirect:/index.php and Apache died
+      # on a DNS lookup. Found by someone installing a real Laravel app.
+      - name: a front controller .htaccess reaches PHP
+        run: |
+          DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+          mkdir -p "$DIR/projects/frontctl/public"
+          {
+            echo '<IfModule mod_rewrite.c>'
+            echo '    RewriteEngine On'
+            echo '    RewriteCond %{REQUEST_FILENAME} !-d'
+            echo '    RewriteCond %{REQUEST_FILENAME} !-f'
+            echo '    RewriteRule ^ index.php [L]'
+            echo '</IfModule>'
+          } > "$DIR/projects/frontctl/public/.htaccess"
+          printf '<?php echo "routed: ", $_SERVER["REQUEST_URI"];' \
+            > "$DIR/projects/frontctl/public/index.php"
+          ln -sfn ../projects/frontctl/public "$DIR/sites/frontctl"
+
+          # "/" always worked: it is a directory, nothing rewrites, and mod_dir's
+          # own redirect reaches the fixup with a real file name. The bug showed
+          # on everything else.
+          host=frontctl--sites.phpforge.dev
+          for path in "" "admin" "admin/login" "api/v1/users?x=1"; do
+            code="$(curl -fsS -o /tmp/fc.txt -w '%{http_code}' \
+                    --resolve "$host:443:127.0.0.1" "https://$host/$path" || true)"
+            test "$code" = 200 || { echo "/$path answered $code"; exit 1; }
+            grep -q 'routed:' /tmp/fc.txt \
+              || { echo "/$path did not reach index.php"; head -3 /tmp/fc.txt; exit 1; }
+          done
+          echo "front controllers route past the home page"
+
       # Apache does not forward the Authorization header to FastCGI by itself;
       # php-fpm.conf adds it back. Removing that line breaks every Bearer token
       # and JWT silently, with nothing else looking wrong.

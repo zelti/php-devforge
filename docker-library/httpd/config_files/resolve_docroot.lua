@@ -163,6 +163,17 @@ function set_php_handler(r)
         return apache2.DECLINED
     end
 
+    -- mod_rewrite's per-directory hook is a fixup too, and it runs first. A
+    -- front controller's .htaccess (Laravel, Symfony, WordPress...) rewrites to
+    -- index.php from there, which leaves r.filename as "redirect:/index.php" --
+    -- a marker, not a path. mod_proxy concatenates the handler with it, so the
+    -- backend became "fcgi://phpNNdev:9000redirect:/index.php" and every URL
+    -- except "/" died on a DNS lookup. The internal redirect that follows runs
+    -- this hook again with the real file name, so declining here costs nothing.
+    if r.filename:sub(1, 1) ~= "/" then
+        return apache2.DECLINED
+    end
+
     local dev_domain = os.getenv("DEV_DOMAIN")
     if not dev_domain then return apache2.DECLINED end
 

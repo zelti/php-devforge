@@ -1456,6 +1456,41 @@ reasoning about them.
 
 ## 💡 Proposed while using it
 
+- [x] **46. Every front controller project was broken past its home page** — FIXED
+      Reported by another session installing a real Laravel app: `/` answered 200,
+      `/admin` answered 500, and the request never reached php-fpm.
+
+      ```
+      AH00898: DNS lookup failure for: php85dev:9000redirect: returned by /admin
+      ```
+
+      mod_rewrite's per-directory hook is a fixup too, registered `APR_HOOK_FIRST`,
+      so it runs before `set_php_handler`. A front controller's `.htaccess`
+      rewrites to index.php there and leaves `r.filename` as `redirect:/index.php`
+      -- a marker, not a path. It ends in `.php`, so the handler matched, and
+      mod_proxy concatenated handler and filename into
+      `fcgi://php85dev:9000redirect:/index.php`. Hence the host
+      `php85dev:9000redirect`.
+
+      `/` escaped it because it is a directory: the `!-d`/`!-f` conditions do not
+      fire, nothing rewrites, and mod_dir's own internal redirect reaches the hook
+      with a real file name. So Laravel, Symfony and WordPress all worked exactly
+      until you clicked a link -- while the README promised `.htaccess` support.
+
+      The guard is one condition: a filename that does not start with `/` is not a
+      file, so decline. Generic rather than matching `^redirect:`, because
+      mod_proxy leaves `proxy:` there too. Declining costs nothing -- the internal
+      redirect runs the hook again with the real name.
+
+      Reproduced independently with a minimal `.htaccess` fixture before agreeing
+      with the diagnosis, and the CI step was falsified by removing the guard:
+      `/admin answered 500`.
+
+      **Found on the way, not fixed here:** the nginx variant 404s on the same
+      URLs. Its `try_files $uri $uri/ =404` has no front-controller fallback, and
+      adding one unconditionally would impose front-controller semantics on every
+      project, including static ones. That needs a decision, not a one-liner.
+
 - [x] **45. Nothing says which php-devforge you are running** — FIXED
       No `VERSION`, no git tags, no metadata, and every image tagged `:dev`. Fine
       for one person on one checkout; useless the moment somebody reports

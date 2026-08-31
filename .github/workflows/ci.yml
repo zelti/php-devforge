@@ -438,14 +438,23 @@ jobs:
           # "Started" is not "ready": Apache answers on 443 before the PHP
           # containers finish their entrypoint, and a proxy into that window
           # returns 503. Every request here goes through this.
+          # 60, not 30: this step recreates every container, and one run gave up
+          # at 44 seconds while its twin on the same commit passed. On exhaustion
+          # it says what was up at the time, so a future failure explains itself
+          # instead of printing an empty string.
           serve() { # host, path -> body, empty if it never answered
             local out=""
-            for _ in $(seq 1 30); do
+            for _ in $(seq 1 60); do
               out="$(curl -fsSk --max-time 5 --resolve "$1:443:127.0.0.1" \
                      "https://$1/$2" 2>/dev/null || true)"
               [ -n "$out" ] && break
               sleep 1
             done
+            if [ -z "$out" ]; then
+              echo "no answer from https://$1/$2 after 60 tries" >&2
+              docker compose ps >&2
+              docker compose logs --tail=20 apachedev >&2
+            fi
             printf '%s' "$out"
           }
 
@@ -533,15 +542,24 @@ jobs:
           forge link "$DIR/projects/my-app/public"
           mkdir -p "$DIR/sites/api/v2"
           printf '<?php echo "nested ok";' > "$DIR/sites/api/v2/index.php"
-          get() { curl -fsS -k --resolve "$1.phpforge.dev:443:127.0.0.1" "https://$1.phpforge.dev/"; }
+          # Fetch to a file, then grep it. Piping curl into `grep -q` is a race:
+          # grep exits at the first match, curl is left writing to a closed pipe
+          # and exits 23. It never bit while the welcome page was a hundred bytes
+          # and started failing on main when the page grew to five kilobytes.
+          serves() { # host, expected text
+            curl -fsS -k --max-time 10 --resolve "$1.phpforge.dev:443:127.0.0.1" \
+              "https://$1.phpforge.dev/" > /tmp/page.txt
+            grep -q "$2" /tmp/page.txt \
+              || { echo "$1 does not contain: $2"; head -5 /tmp/page.txt; exit 1; }
+          }
           # The README now sends new users to the short welcome URL, so it is no
           # longer only the long form that has to answer.
-          get welcome                  | grep -q "PHP DevForge is running"
-          get welcome                  | grep -q "Apache"
-          get my-app                   | grep -q "my-app on PHP"   # sites/ shortcut
-          get v2--api                  | grep -q "nested ok"       # nested under sites/
-          get public--my-app--projects | grep -q "my-app on PHP"   # full path still works
-          get my-app--sites            | grep -q "my-app on PHP"   # long form still works
+          serves welcome                  "PHP DevForge is running"
+          serves welcome                  "Apache"
+          serves my-app                   "my-app on PHP"   # sites/ shortcut
+          serves v2--api                  "nested ok"       # nested under sites/
+          serves public--my-app--projects "my-app on PHP"   # full path still works
+          serves my-app--sites            "my-app on PHP"   # long form still works
           # forge link must produce a relative link: an absolute one resolves on the
           # runner but points at nothing inside the containers.
           case "$(readlink "$DIR/sites/my-app")" in
@@ -646,9 +664,15 @@ jobs:
             curl -fsS --max-time 5 https://welcome--sites.phpforge.dev/ >/dev/null 2>&1 && break
             sleep 1
           done
-          curl -fsS https://welcome--sites.phpforge.dev/ | grep -q "PHP DevForge is running"
-          curl -fsS https://my-app--sites.phpforge.dev/ | grep -q "my-app on PHP 8.4"
-          curl -fsS https://my-app--sites--p83.phpforge.dev/ | grep -q "PHP 8.3"
+          curl -fsS https://welcome--sites.phpforge.dev/ > /tmp/dns.txt
+          grep -q "PHP DevForge is running" /tmp/dns.txt
+          # Same shape as above: these bodies are small enough that the race has
+          # never fired, and leaving one instance of the pattern around is how it
+          # comes back.
+          curl -fsS https://my-app--sites.phpforge.dev/ > /tmp/dns.txt
+          grep -q "my-app on PHP 8.4" /tmp/dns.txt
+          curl -fsS https://my-app--sites--p83.phpforge.dev/ > /tmp/dns.txt
+          grep -q "PHP 8.3" /tmp/dns.txt
 
       - name: --remove undoes it, with .env already gone
         run: |
@@ -778,12 +802,17 @@ jobs:
               https://welcome--sites.phpforge.dev/ >/dev/null 2>&1 && break
             sleep 1
           done
-          get() { curl -fsS -k --resolve "$1.phpforge.dev:443:127.0.0.1" "https://$1.phpforge.dev/"; }
+          serves() { # host, expected text -- to a file, never into `grep -q`
+            curl -fsS -k --max-time 10 --resolve "$1.phpforge.dev:443:127.0.0.1" \
+              "https://$1.phpforge.dev/" > /tmp/page.txt
+            grep -q "$2" /tmp/page.txt \
+              || { echo "$1 does not contain: $2"; head -5 /tmp/page.txt; exit 1; }
+          }
           # The welcome page names who served it, which is the point of switching
-          get welcome                | grep -q "nginx"
-          get my-app--sites          | grep -q "PHP 8.4"
-          get my-app--sites--p83     | grep -q "PHP 8.3"
-          get my-app--sites--p85     | grep -q "PHP 8.5"
+          serves welcome                "nginx"
+          serves my-app--sites          "PHP 8.4"
+          serves my-app--sites--p83     "PHP 8.3"
+          serves my-app--sites--p85     "PHP 8.5"
           # The Lua sets an unroutable backend when it cannot work out a version, so a
           # .php fails closed instead of being served as a static file.
           for h in my-app--sites my-app--sites--p99; do
@@ -826,7 +855,8 @@ jobs:
             sleep 1
           done
           curl -fsS -k --resolve welcome.phpforge.dev:443:127.0.0.1 \
-            https://welcome.phpforge.dev/ | grep -q "PHP DevForge is running"
+            https://welcome.phpforge.dev/ > /tmp/degraded.txt
+          grep -q "PHP DevForge is running" /tmp/degraded.txt
           self_signed || {
             echo "apache is not serving a generated certificate: $(cert_field issuer)"; exit 1; }
           docker compose logs apachedev | grep -qi 'self-signed'
@@ -841,7 +871,8 @@ jobs:
           docker compose ps --services | grep -qx nginxdev || {
             echo "nginxdev is not running"; docker compose logs --tail=20 nginxdev; exit 1; }
           curl -fsS -k --resolve welcome.phpforge.dev:443:127.0.0.1 \
-            https://welcome.phpforge.dev/ | grep -q "PHP DevForge is running"
+            https://welcome.phpforge.dev/ > /tmp/degraded.txt
+          grep -q "PHP DevForge is running" /tmp/degraded.txt
           self_signed || {
             echo "nginx is not serving a generated certificate: $(cert_field issuer)"; exit 1; }
           echo "nginx degrades too"

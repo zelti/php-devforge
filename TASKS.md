@@ -2004,3 +2004,49 @@ reasoning about them.
 
       **Not a priority.** Worth doing the day the project is shown to other
       people; for a single user who already has it cloned it changes nothing.
+
+- [x] **54. pnpm instead of nvm — measured, and not worth it** — DECIDED, NOT DOING
+      Recorded because the idea is a reasonable one and the reason for dropping it
+      is not obvious. Without this note the measurement gets repeated in six
+      months.
+
+      **The chicken-and-egg does dissolve.** The pnpm standalone installer brings
+      its own runtime, so it installs into an image with *no Node at all*, and
+      then puts one on the PATH:
+
+      ```
+      $ curl -fsSL https://get.pnpm.io/install.sh | sh -    # no node in the image
+      pnpm 11.24.0
+      $ pnpm env use --global 24                            -> node v24.20.0
+      ```
+
+      So nvm could be removed. Two things stop it.
+
+      **The prize does not exist.** Per-project Node via `use-node-version`, which
+      is what would have justified the swap -- every site on its own Node without
+      touching the image -- is simply not honoured:
+
+      ```
+      .npmrc: use-node-version=22.20.0
+      $ pnpm run v      ->  sh: 1: node: not found
+      ```
+
+      **And the size goes the wrong way.** Measured inside the real image:
+
+      | | |
+      |---|---|
+      | nvm + Node 24 (what ships) | **277 MB** |
+      | pnpm standalone + Node 24 | **523 MB** |
+      | ...after purging the package cache | 395 MB |
+
+      pnpm's store keeps the downloaded content *and* the linked copy; the node
+      binary alone accounts for 121 MB in there. The swap costs 120-250 MB more
+      per image, on one that is already about 1.9 GB, times three versions.
+
+      **The instinct behind it was sound, but nvm was not the culprit** -- Node
+      itself is, baked into every image and never used by many people. Dropping it
+      and letting whoever needs it run one line (`nvm install 24`, or
+      `pnpm env use --global 24`) would take roughly 277 MB off each image, about
+      830 MB with all three installed. The price is a download the first time Node
+      is used inside a container. Raised, and deliberately left alone: the images
+      stay as they are.

@@ -732,6 +732,11 @@ install it if you do not have it.
 `my-app` project, an enabled database — so when one fails on a missing file, run
 the earlier step first. `run-step.py` with no arguments lists them in order.
 
+The steps that fetch a page source `.github/scripts/serve.sh` for two helpers:
+`serves <host> <text>` asserts a page contains something, and `serve <host>
+<path>` retries for a minute and, when it gives up, says why — the status it got,
+what curl said, and what was listening on 443.
+
 **Two kinds of step cannot pass locally**, and that is expected:
 
 | Step | Why | To run it anyway |

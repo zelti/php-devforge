@@ -1846,3 +1846,37 @@ reasoning about them.
       path, swallow the exit status). The blank-line falsification passed at first:
       the assertion only exercised a block at the end of the file, so the test
       grew content after the block before it could catch anything.
+
+- [x] **50. A CI failure has to explain itself** — DONE
+      A run went red on `main` with the whole of its evidence being:
+
+      ```
+      no answer from https://my-app--sites.phpforge.dev/ after 60 tries
+      apachedev  ...  Up About a minute (healthy)
+      ```
+
+      60 attempts in 61 seconds — every one failing instantly, which is a refused
+      connection or a status code, never a timeout — and no way to tell which,
+      because the helper sent curl's stderr to `/dev/null`. The commit was fine:
+      a re-run of the same sha passed. But an hour went into a message that could
+      not distinguish three unrelated failures.
+
+      `serve()` now keeps the status and the error, and prints them on exhaustion
+      along with what is listening on 443. The three cases read differently:
+
+      ```
+      curl said: curl: (7) Failed to connect to 127.0.0.1 port 443
+      last http status: 404      + the first lines of what it served instead
+      it answered 200 with an empty body
+      ```
+
+      The three helpers moved to `.github/scripts/serve.sh`, sourced by the steps
+      that need them — two of them were identical byte for byte, and this fix
+      would otherwise have had to be made three times.
+
+      **A mistake caught before it shipped:** dropping `-f` to get at the status
+      also made an error page count as an answer, so `test -n "$(serve ...)"`
+      would have passed on a 404. Only a 2xx breaks the loop now, exactly as `-f`
+      had it. Falsified against the real stack, all three: a missing path (404), a
+      port with nothing on it (curl 7), and an empty `index.php` (200, no body).
+

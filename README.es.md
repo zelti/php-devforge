@@ -4,10 +4,11 @@
 
 # PHP DevForge
 
+[![Release](https://img.shields.io/github/v/release/zelti/php-devforge)](https://github.com/zelti/php-devforge/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![CI](https://github.com/zelti/php-devforge/actions/workflows/ci.yml/badge.svg)](https://github.com/zelti/php-devforge/actions/workflows/ci.yml)
 ![PHP](https://img.shields.io/badge/PHP-8.3%20%7C%208.4%20%7C%208.5-777BB4)
-[![GitHub last commit](https://img.shields.io/github/last-commit/zelti/php-devforge)]()
+[![GitHub last commit](https://img.shields.io/github/last-commit/zelti/php-devforge)](https://github.com/zelti/php-devforge/commits/main)
 
 [English](README.md) · **Español**
 

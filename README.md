@@ -189,6 +189,7 @@ forge link ~/code/app/public # publish a project at app.<domain>
 forge php list               # PHP versions, and which are installed
 forge php on|off 8.3         # install one, or free the ~2 GB it uses
 forge use 8.5                # set the default version (installs it if needed)
+forge run composer install   # run a command in the right container
 forge shell 8.4              # open a shell in a container
 forge logs 8.4               # follow its logs
 
@@ -200,6 +201,7 @@ forge mail on|off            # a mail catcher at mail.<domain>
 forge images build|pull      # build locally, or use the published images
 forge certs                  # regenerate the certificates
 forge dns status             # inspect the local DNS
+forge skill status           # teach the AI agents here how to use this
 
 forge uninstall              # undo the install (see below)
 forge version
@@ -301,6 +303,30 @@ command to add it, rather than a bare 503.
 - Nothing to restart for a code change
 - Open a shell in a container with `forge shell 8.4`
 - Watch what is happening with `forge logs`
+
+### ⚙️ Running commands in a project
+
+`forge run` runs one command inside the right container, in the folder you are in:
+
+```bash
+cd ~/php-devforge/projects/my-app
+forge run composer install
+forge run pnpm run build
+forge run php artisan migrate
+
+forge run -p 8.3 php -v                    # a different version, just this once
+forge run -C projects/my-app pnpm build    # from anywhere
+```
+
+It exists because the hand-written form has four ways to go wrong. The projects
+folder is mounted at a different path inside, so the host path fails with
+`chdir ... no such file or directory`. The user is `php-devforge`, not root.
+Node and pnpm come from nvm and are only on the PATH of a **login** shell, so
+without one they look uninstalled. And `-it` fails outright when nothing is a
+terminal — `forge run` adds it only when there is one, which is also what keeps
+escape codes out of captured output.
+
+The command's own exit status comes back, so it works in a script.
 
 ### 🐞 Xdebug
 
@@ -543,6 +569,37 @@ image for `nginx:alpine` will not work.
 
 They are real service definitions rather than commented-out YAML, so
 `docker compose config` and CI keep checking them and they cannot quietly break.
+
+## 🤖 AI agents
+
+The repo carries a skill file, `skills/php-devforge/SKILL.md`, that teaches an AI
+coding agent how this environment works: `forge run` instead of `docker exec`,
+how a folder becomes a URL, the database and SMTP settings, what is live and what
+needs a restart, and the traps.
+
+The installer offers to hook it up, and afterwards:
+
+```bash
+forge skill status     # which agents were found, and which are hooked up
+forge skill on         # all of them, or: forge skill on codex
+forge skill off
+forge skill path       # print the file, to point anything else at it
+```
+
+An agent is only offered the skill when its configuration folder already exists,
+so nothing is created for a tool you do not use. Two shapes, because agents load
+instructions differently:
+
+| Agent | How |
+|---|---|
+| Claude Code | a symlink in `~/.claude/skills/`, loaded on demand |
+| Codex, Gemini, opencode | a delimited block in their global instructions file |
+
+The block is short on purpose — a global instructions file is in context for
+every session, so it gets a summary and the path to the full file. It sits
+between `<!-- php-devforge:start -->` and `<!-- php-devforge:end -->`, is
+rewritten in place rather than appended, and `forge skill off` takes out the
+block and the blank line before it, leaving the rest of the file untouched.
 
 ## 🛠️ Supported PHP Extensions and Tools
 

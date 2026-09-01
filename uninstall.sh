@@ -18,6 +18,8 @@ title() { echo -e "\n${BLUE}$1${NC}"; }
 
 # shellcheck source=lib/compose.sh
 . ./lib/compose.sh
+# shellcheck source=lib/skill.sh
+. ./lib/skill.sh
 
 ASSUME_YES=0; FORCE=0; DRY=0; KEEP_IMAGES=0; RM_VOLUMES=0; RM_PROJECTS=0
 LEFTOVER=0   # a step that needed sudo and did not get it
@@ -259,6 +261,25 @@ if [ -L "$LINK" ]; then
     fi
 else
     say "not linked; nothing to remove"
+fi
+
+# ---------- AI agents ----------
+# Only what we put there: a block between our markers, or a symlink into this
+# checkout. Anything else in those files is the user's.
+title "AI agents"
+SKILL_FOUND=0
+while IFS=$'\t' read -r SK_NAME SK_KIND SK_PATH; do
+    [ -n "$SK_NAME" ] || continue
+    skill_is_on "$SK_KIND" "$SK_PATH" || continue
+    SKILL_FOUND=1
+    [ "$DRY" -eq 1 ] && echo "  would unhook $SK_NAME from $SK_PATH"
+done <<EOF
+$(skill_targets)
+EOF
+if [ "$SKILL_FOUND" -eq 0 ]; then
+    say "not hooked up to any agent; nothing to remove"
+elif [ "$DRY" -eq 0 ]; then
+    skill_off
 fi
 
 # ---------- system changes ----------

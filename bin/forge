@@ -6,6 +6,10 @@
 #
 set -euo pipefail
 
+# Where you were when you typed the command. `forge run` and `forge shell` map
+# it into the container, and the cd below loses it -- which is why the case in
+# cmd_shell that was meant to keep your directory never once matched.
+INVOCATION_DIR="$PWD"
 FORGE_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 cd "$FORGE_DIR"
 
@@ -13,6 +17,8 @@ cd "$FORGE_DIR"
 . ./lib/compose.sh
 # shellcheck source=lib/version.sh
 . ./lib/version.sh
+# shellcheck source=lib/skill.sh
+. ./lib/skill.sh
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info() { echo -e "${GREEN}[OK]${NC} $1"; }
@@ -157,14 +163,92 @@ cmd_use() {
     compose_up
 }
 
+# The projects folder is bind-mounted at a fixed path inside every container, so
+# a host directory has to be translated before docker exec sees it. Passing $PWD
+# straight through is what made `forge shell` die inside a project with
+# `chdir to cwd ... no such file or directory`.
+CONTAINER_ROOT="/home/php-devforge/public_html"
+
+projects_dir() { sed -ne 's/^PROJECTS_DIR=//p' .env 2>/dev/null; }
+
+# Both sides resolved with -P: sites/ is a folder of symlinks into projects/, and
+# the two spellings of the same directory have to land on the same answer.
+container_path() { # host dir -> container dir; 1 when it is outside
+    local root abs
+    root="$(projects_dir)"
+    [ -n "$root" ] || return 1
+    root="$(cd "$root" 2>/dev/null && pwd -P)" || return 1
+    abs="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+    case "$abs" in
+        "$root")   printf '%s\n' "$CONTAINER_ROOT" ;;
+        "$root"/*) printf '%s\n' "$CONTAINER_ROOT/${abs#"$root"/}" ;;
+        *) return 1 ;;
+    esac
+}
+
+need_running() { # container
+    # Here-string, not a pipe: see the note on compose_up.
+    grep -qx "$1" <<<"$(docker ps --format '{{.Names}}' 2>/dev/null)" && return 0
+    err "$1 is not running."
+    echo "  Start it:  forge start" >&2
+    exit 1
+}
+
 cmd_shell() {
     need_env
     local v; v="$(normalise "${1:-$(current_version)}")"
     need_php "$v"
+    need_running "php${v}dev"
     # Keep your current directory when you are inside the projects folder.
-    local wd="/home/php-devforge"
-    case "$PWD" in *public_html*|"$(sed -ne 's/^PROJECTS_DIR=//p' .env)"*) wd="$PWD" ;; esac
+    local wd; wd="$(container_path "$INVOCATION_DIR")" || wd="/home/php-devforge"
     docker exec -it -w "$wd" -u php-devforge "php${v}dev" bash
+}
+
+# What `forge shell` is for scripts, and the reason this command exists: the
+# hand-written form has to know the container path, the user, that node and pnpm
+# only exist in a login shell, and that -it must be dropped when there is no
+# terminal. Getting any of the four wrong fails in a way that reads like a
+# problem with your project.
+cmd_run() {
+    need_env
+    local v="" dir=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -p|--php) v="${2:-}"; shift 2 ;;
+            -p*)      v="${1#-p}"; shift ;;
+            -C|--dir) dir="${2:-}"; shift 2 ;;
+            --)       shift; break ;;
+            -*) err "Unknown option: $1"
+                echo "  usage: forge run [-p VERSION] [-C DIR] <command>..." >&2; exit 1 ;;
+            *) break ;;
+        esac
+    done
+    [ $# -ge 1 ] || { err "What should I run? e.g. forge run composer install"; exit 1; }
+
+    v="$(normalise "${v:-$(current_version)}")"
+    need_php "$v"
+    need_running "php${v}dev"
+
+    local wd root; root="$(projects_dir)"
+    if [ -n "$dir" ]; then
+        case "$dir" in /*) ;; *) dir="$root/$dir" ;; esac
+        wd="$(container_path "$dir")" || {
+            err "No such folder under $root: $dir"; exit 1; }
+    else
+        wd="$(container_path "$INVOCATION_DIR")" || {
+            err "You are not inside $root, so there is no project to run this in."
+            echo "  cd into it, or name it:  forge run -C projects/my-app $1 ..." >&2
+            exit 1
+        }
+    fi
+
+    # %q keeps arguments that contain spaces intact through the login shell.
+    local cmdline; cmdline="$(printf '%q ' "$@")"
+    # -t only with a terminal on both ends: with it, captured output carries
+    # escape codes, and `docker exec -it` under a pipe fails outright.
+    local tty=(); [ -t 0 ] && [ -t 1 ] && tty=(-t)
+    exec docker exec -i "${tty[@]+"${tty[@]}"}" -u php-devforge -w "$wd" \
+         "php${v}dev" bash -lc "$cmdline"
 }
 
 # No argument means every service: when something breaks you rarely know which
@@ -407,6 +491,41 @@ cmd_link() {
 
 cmd_certs() { need_env; ./install_cert.sh; }
 
+# Teaching the AI agents on this machine how to drive all of the above. The file
+# is one; only the wrapper differs per agent. See lib/skill.sh.
+cmd_skill() {
+    local targets; targets="$(skill_targets)"
+    case "${1:-status}" in
+        on)  shift
+             if [ -z "$targets" ]; then
+                 warn "No AI agent found on this machine."
+                 echo "    Point yours at $(skill_path)"
+                 exit 0
+             fi
+             skill_on "${1:-}" || { err "Unknown agent: ${1:-}"; exit 1; } ;;
+        off) shift; skill_off "${1:-}" ;;
+        path) skill_path ;;
+        status|"")
+             if [ -z "$targets" ]; then
+                 echo "  no AI agent found; the file is $(skill_path)"
+                 return 0
+             fi
+             local name kind path
+             while IFS=$'\t' read -r name kind path; do
+                 [ -n "$name" ] || continue
+                 if skill_is_on "$kind" "$path"; then
+                     printf '  %-9s ON   %s\n' "$name" "$path"
+                 else
+                     printf '  %-9s off  %s\n' "$name" "$path"
+                 fi
+             done <<EOF
+$targets
+EOF
+             ;;
+        *) err "forge skill [status|on|off|path] [agent]"; exit 1 ;;
+    esac
+}
+
 cmd_dns() {
     need_env
     case "${1:-status}" in
@@ -435,6 +554,7 @@ PHP DevForge $(forge_version)
   forge php list               the PHP versions, and which are installed
   forge php on|off <version>   install one, or free the disk it uses
   forge use <version>          set the default version (installs it if needed)
+  forge run [-p V] [-C DIR] .. run a command in the PHP container
   forge shell [version]        open a shell in a PHP container
   forge logs  [version|service] follow the logs; everything if you name nothing
 
@@ -449,6 +569,7 @@ PHP DevForge $(forge_version)
 
   forge images build|pull      build images locally, or use the published ones
   forge certs                  regenerate the HTTPS certificates
+  forge skill [on|off|path]    teach the AI agents here how to use all this
   forge dns [setup|status|test|remove]
 
 PHP versions: $(installed_versions | pretty | commas) installed, out of $(php_versions | pretty | commas)
@@ -468,6 +589,7 @@ case "${1:-help}" in
     status)  shift; cmd_status ;;
     php)     shift; cmd_php "$@" ;;
     use)     shift; cmd_use "$@" ;;
+    run)     shift; cmd_run "$@" ;;
     shell)   shift; cmd_shell "$@" ;;
     logs)    shift; cmd_logs "$@" ;;
     link)    shift; cmd_link "$@" ;;
@@ -476,6 +598,7 @@ case "${1:-help}" in
     mail)    shift; cmd_mail "$@" ;;
     images)  shift; cmd_images "$@" ;;
     certs)   shift; cmd_certs ;;
+    skill)   shift; cmd_skill "$@" ;;
     dns)     shift; cmd_dns "$@" ;;
     version|-v|--version) echo "PHP DevForge $(forge_version)" ;;
     help|-h|--help) cmd_help ;;

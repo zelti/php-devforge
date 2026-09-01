@@ -1924,9 +1924,34 @@ reasoning about them.
       document root is derived from the host name, and an unmatched host lands on
       whichever vhost loaded first.
 
-      A `/healthz` location in `devlocal-common.conf` and in the nginx template,
-      returning a fixed 200 regardless of what is in the projects folder, would
-      let the probe require a real status again -- and would come from our own
-      vhost rather than from the mail proxy. It costs a rebuild of both web
-      server images and a decision about whether that path is reserved (a project
-      with its own `/healthz` would lose it).
+      A location returning a fixed 200 regardless of what is in the projects
+      folder, in `devlocal-common.conf` and in the nginx template, would let the
+      probe require a real status again -- and would come from our own vhost
+      rather than from the mail proxy.
+
+      **The path is settled: something like `/__phpdevforge_healthz`**, not
+      `/healthz`. A distinctive name is not decoration -- it is what stops the
+      route from being reserved in practice. Nobody has a URL like that, so no
+      project loses one.
+
+      **Where it goes is not settled, and the name does not answer it.** The probe
+      asks `localhost`, and on 443 that is answered by `010-mail.conf`, not by
+      our vhost -- so a `<Location>` inside `devlocal-common.conf` is never
+      reached. Two ways out, neither verified:
+
+      - put it in the server-wide configuration, outside every `<VirtualHost>`,
+        and rely on vhosts inheriting it (Apache is believed to do this; it was
+        not tested);
+      - or have the probe use `--resolve` with `DEV_DOMAIN`, so it arrives at our
+        vhost with the right SNI. More predictable, and `DEV_DOMAIN` is already in
+        the container.
+
+      **Deliberately not done yet, and the reason is not the cost.** Nothing reads
+      the health status: `condition: service_healthy` appears nowhere, CI never
+      waits on it, and `forge status` only prints it. Tightening "answers HTTP"
+      into "answers 200" changes no decision anyone takes today.
+
+      **What should trigger it:** the first time something depends on health --
+      for instance `forge start` waiting for the web server to actually serve
+      instead of the `curl` loop CI uses. At that point the check becomes
+      infrastructure and has to be exact.

@@ -307,6 +307,34 @@ jobs:
             > "$DIR/projects/my-app/public/index.php"
           ln -sfn ../projects/my-app/public "$DIR/sites/my-app"
 
+      # A container reporting healthy while HTTPS answers nothing is worse than
+      # no healthcheck at all: it is the line that made a failed run unreadable.
+      - name: the healthcheck tests HTTPS, not just port 80
+        run: |
+          probe="$(docker inspect --format '{{json .Config.Healthcheck.Test}}' apachedev)"
+          case "$probe" in
+            *https://localhost*) ;;
+            *) echo "the healthcheck never touches 443: $probe"; exit 1 ;;
+          esac
+
+          state=""
+          for _ in $(seq 1 90); do
+            state="$(docker inspect --format '{{.State.Health.Status}}' apachedev)"
+            [ "$state" = healthy ] && break
+            sleep 1
+          done
+          test "$state" = healthy || {
+            echo "apachedev never became healthy: $state"
+            docker inspect --format '{{json .State.Health}}' apachedev
+            exit 1
+          }
+
+          # docker keeps every probe's output in the health log, and the welcome
+          # page is five kilobytes of it. -o /dev/null keeps it readable.
+          out="$(docker inspect --format '{{(index .State.Health.Log 0).Output}}' apachedev)"
+          test -z "$out" || { echo "the probe logged a page body: $out"; exit 1; }
+          echo "healthy over both ports, quietly"
+
       - name: diagnostics
         if: failure()
         run: |
@@ -880,6 +908,20 @@ jobs:
               https://welcome--sites.phpforge.dev/ >/dev/null 2>&1 && break
             sleep 1
           done
+          # nginx has its own entrypoint and its own certificate paths, so its
+          # healthcheck is verified here rather than assumed from apachedev's.
+          state=""
+          for _ in $(seq 1 90); do
+            state="$(docker inspect --format '{{.State.Health.Status}}' nginxdev)"
+            [ "$state" = healthy ] && break
+            sleep 1
+          done
+          test "$state" = healthy || {
+            echo "nginxdev never became healthy: $state"
+            docker inspect --format '{{json .State.Health}}' nginxdev
+            exit 1
+          }
+
           . .github/scripts/serve.sh
           # The welcome page names who served it, which is the point of switching
           serves welcome                "nginx"

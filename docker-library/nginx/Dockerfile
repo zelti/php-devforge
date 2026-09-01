@@ -4,8 +4,12 @@ FROM openresty/openresty:bookworm
 # Instala Bash y gettext (para envsubst) para asegurar la compatibilidad con tu CMD
 # En Bookworm, gettext es el paquete que proporciona envsubst.
 # Aunque Bash ya podría estar en Bookworm, lo instalamos para asegurar la compatibilidad con el CMD.
+# curl is for the healthcheck, not for the server: the image shipped without any
+# HTTP client, so `curl --fail http://localhost` had been reporting
+# "curl: not found" since the day it was written and nginxdev never once
+# reached healthy. Nothing depends on that status, which is why it went unseen.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends bash gettext && \
+    apt-get install -y --no-install-recommends bash gettext curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Crear usuario de desarrollo php-devforge

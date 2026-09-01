@@ -1955,3 +1955,52 @@ reasoning about them.
       for instance `forge start` waiting for the web server to actually serve
       instead of the `curl` loop CI uses. At that point the check becomes
       infrastructure and has to be exact.
+
+- [ ] **53. `bootstrap.sh`: install with one line** 💬 DISCUSS FIRST — *designed, not
+      started. Discussed as "44" in conversation before that number went to the
+      welcome page.*
+
+      ```bash
+      curl -fsSL https://raw.githubusercontent.com/zelti/php-devforge/main/bootstrap.sh | bash
+      ```
+
+      Roughly eighty lines that install nothing themselves: check that docker is
+      running and git is there, refuse to run under sudo, clone into
+      `~/php-devforge-config` (or `git pull` when it is already that repo), and
+      hand over to the installer everyone already has.
+
+      **The one line with a trick in it**, and it was verified rather than
+      assumed:
+
+      ```bash
+      exec ./install.sh < /dev/tty
+      ```
+
+      Under `curl … | bash` standard input *is the pipe*, not the keyboard, so
+      `install.sh:68` correctly refuses to ask questions it cannot hear:
+
+      ```
+      $ cat install.sh | bash -s -- --domain=test.dev
+      [ERROR] No terminal to ask questions on. Use --yes (plus --skip-cert / --skip-dns).
+      ```
+
+      The fix is to hand the terminal back, never to remove that guard --
+      otherwise the one-line install is a blind `--yes` or nothing.
+
+      **It is a cover, not an engine.** Claude Code's installer works because it
+      installs *itself*: one binary. Here the repository **is** the product -- the
+      compose files, the Dockerfiles, the vhosts, the docroot Lua. Nobody escapes
+      the clone; the bootstrapper only performs it for them.
+
+      What it genuinely buys: it fails *before* cloning when docker is missing,
+      instead of after; it puts the checkout in one predictable place, which is
+      the failure mode behind task 40 (two copies fighting over the same
+      containers); and it is one line to paste into a README or a demo.
+
+      What it costs: a second entry point to maintain and cover in CI, and asking
+      people to pipe the internet into `bash` in a project that touches the system
+      trust store. That is answered by documenting the distrustful path --
+      `curl -o bootstrap.sh …`, read it, run it -- but that has to be written.
+
+      **Not a priority.** Worth doing the day the project is shown to other
+      people; for a single user who already has it cloned it changes nothing.

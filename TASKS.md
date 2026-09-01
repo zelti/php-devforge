@@ -1846,3 +1846,87 @@ reasoning about them.
       path, swallow the exit status). The blank-line falsification passed at first:
       the assertion only exercised a block at the end of the file, so the test
       grew content after the block before it could catch anything.
+
+- [x] **50. A CI failure has to explain itself** — DONE
+      A run went red on `main` with the whole of its evidence being:
+
+      ```
+      no answer from https://my-app--sites.phpforge.dev/ after 60 tries
+      apachedev  ...  Up About a minute (healthy)
+      ```
+
+      60 attempts in 61 seconds — every one failing instantly, which is a refused
+      connection or a status code, never a timeout — and no way to tell which,
+      because the helper sent curl's stderr to `/dev/null`. The commit was fine:
+      a re-run of the same sha passed. But an hour went into a message that could
+      not distinguish three unrelated failures.
+
+      `serve()` now keeps the status and the error, and prints them on exhaustion
+      along with what is listening on 443. The three cases read differently:
+
+      ```
+      curl said: curl: (7) Failed to connect to 127.0.0.1 port 443
+      last http status: 404      + the first lines of what it served instead
+      it answered 200 with an empty body
+      ```
+
+      The three helpers moved to `.github/scripts/serve.sh`, sourced by the steps
+      that need them — two of them were identical byte for byte, and this fix
+      would otherwise have had to be made three times.
+
+      **A mistake caught before it shipped:** dropping `-f` to get at the status
+      also made an error page count as an answer, so `test -n "$(serve ...)"`
+      would have passed on a 404. Only a 2xx breaks the loop now, exactly as `-f`
+      had it. Falsified against the real stack, all three: a missing path (404), a
+      port with nothing on it (curl 7), and an empty `index.php` (200, no body).
+
+- [x] **51. The healthcheck tested port 80 while everything else used 443** — DONE
+      `test: curl --fail http://localhost` — no HTTPS anywhere in it. Every request
+      a user makes and every request CI makes goes through 443, so the check could
+      report `healthy` beside an HTTPS that had answered nothing for a full minute.
+      That is the line that made task 50's failure unreadable.
+
+      No accommodation is needed for a missing certificate: both entrypoints
+      generate a self-signed one, so 443 is always meant to be up. Both web servers
+      now probe HTTP and HTTPS, with `-o /dev/null` so the five-kilobyte welcome
+      page stays out of the health log. Nothing depends on the status
+      (`condition: service_healthy` appears nowhere), so this cannot break a start.
+
+      **Found by verifying it instead of assuming it: the nginx image has no HTTP
+      client at all** — no curl, no wget, no nc. Its healthcheck had been answering
+      `/bin/sh: 1: curl: not found` since the day it was written, and nginxdev has
+      never once reached `healthy`. Nobody saw it because nothing reads that status
+      and the container runs anyway. `curl` joins the packages the image already
+      installs; nginxdev reaches healthy in about ten seconds now.
+
+      **And a third thing, found by CI rejecting the first attempt.** Asking
+      `localhost` for a 2xx asks the wrong question: it matches no `ServerName`
+      of ours, so Apache hands it to the first vhost it loaded. On port 80 that
+      is Debian's `000-default`, which serves its own page. On 443 there is no
+      Debian default, so it is `010-mail.conf` -- and `https://localhost` was
+      being answered by the mail proxy. With the mail catcher off, that proxy
+      returns 500, which is exactly what CI got while Apache was perfectly fine.
+
+      The probe therefore does not use `--fail`. What it can honestly assert is
+      that both ports answer HTTP at all, which still catches a dead process, a
+      closed port and a broken TLS listener. Reproduced locally by stopping
+      mailpit: the `--fail` version fails, the shipped one does not, and pointing
+      the HTTPS half at a closed port still fails.
+
+      Verified on a real stack for both servers, and falsified twice: the old
+      HTTP-only probe still passes with HTTPS unreachable while the new one exits
+      1, and the CI step fails with "the healthcheck never touches 443" when the
+      compose file is put back the way it was.
+
+- [ ] **52. A health endpoint of our own** 💬 DISCUSS FIRST — *proposed, not started*
+      Task 51 ended with a healthcheck that asserts "both ports answer HTTP",
+      because there is no URL the stack is guaranteed to answer with a 2xx: the
+      document root is derived from the host name, and an unmatched host lands on
+      whichever vhost loaded first.
+
+      A `/healthz` location in `devlocal-common.conf` and in the nginx template,
+      returning a fixed 200 regardless of what is in the projects folder, would
+      let the probe require a real status again -- and would come from our own
+      vhost rather than from the mail proxy. It costs a rebuild of both web
+      server images and a decision about whether that path is reserved (a project
+      with its own `/healthz` would lose it).

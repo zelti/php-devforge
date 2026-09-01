@@ -725,6 +725,11 @@ instalarlo.
 archivo que no existe, ejecuta antes el que lo crea. `run-step.py` sin argumentos
 los lista en orden.
 
+Los pasos que piden una página cargan `.github/scripts/serve.sh`, que trae dos
+ayudantes: `serves <host> <texto>` verifica que una página contenga algo, y
+`serve <host> <ruta>` reintenta durante un minuto y, cuando se rinde, dice por
+qué — el estado que recibió, lo que dijo curl, y qué había escuchando en el 443.
+
 **Dos tipos de paso no pueden pasar en local**, y es lo esperado:
 
 | Paso | Por qué | Para ejecutarlo igual |

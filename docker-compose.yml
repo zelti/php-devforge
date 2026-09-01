@@ -66,8 +66,25 @@ services:
       # for a version that is not installed, and a second list would drift.
       - ENABLED_PROFILES=${COMPOSE_PROFILES:-}
     logging: *json-logging
+    # HTTPS too, not only port 80. Every request a user makes and every request
+    # CI makes goes through 443, and a check that never touches it reported
+    # `healthy` beside an HTTPS that answered nothing for a full minute -- which
+    # is the line that made that failure unreadable. There is no HTTP-only mode
+    # to accommodate: the entrypoint generates a self-signed certificate when the
+    # real one is missing, so 443 is always meant to be up.
+    #
+    # No --fail, deliberately. `localhost` matches no ServerName of ours, so
+    # Apache hands it to the first vhost it loaded: Debian's 000-default on 80,
+    # and 010-mail.conf on 443, where there is no Debian default to come first.
+    # What that returns is an accident of which profiles are on -- with the mail
+    # catcher off, the proxy to mailpit:8025 answers 500 and the check called a
+    # perfectly healthy Apache sick. Both ports answering HTTP at all is what
+    # this can honestly assert, and it still catches a dead process, a closed
+    # port and a broken TLS listener.
+    # -o /dev/null because docker keeps the output in the health log, and a page
+    # body would fill it.
     healthcheck:
-      test: curl --fail http://localhost || exit 1
+      test: curl -sS -o /dev/null http://localhost && curl -sSk -o /dev/null https://localhost || exit 1
       interval: 30s
       retries: 5
       start_period: 10s
@@ -107,8 +124,9 @@ services:
     depends_on:
       - dnsmasq
     logging: *json-logging
+    # Same check as apachedev, for the same reason: see the note there.
     healthcheck:
-      test: curl --fail http://localhost || exit 1
+      test: curl -sS -o /dev/null http://localhost && curl -sSk -o /dev/null https://localhost || exit 1
       interval: 30s
       retries: 5
       start_period: 10s

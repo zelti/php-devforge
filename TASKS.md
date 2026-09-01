@@ -1924,9 +1924,129 @@ reasoning about them.
       document root is derived from the host name, and an unmatched host lands on
       whichever vhost loaded first.
 
-      A `/healthz` location in `devlocal-common.conf` and in the nginx template,
-      returning a fixed 200 regardless of what is in the projects folder, would
-      let the probe require a real status again -- and would come from our own
-      vhost rather than from the mail proxy. It costs a rebuild of both web
-      server images and a decision about whether that path is reserved (a project
-      with its own `/healthz` would lose it).
+      A location returning a fixed 200 regardless of what is in the projects
+      folder, in `devlocal-common.conf` and in the nginx template, would let the
+      probe require a real status again -- and would come from our own vhost
+      rather than from the mail proxy.
+
+      **The path is settled: something like `/__phpdevforge_healthz`**, not
+      `/healthz`. A distinctive name is not decoration -- it is what stops the
+      route from being reserved in practice. Nobody has a URL like that, so no
+      project loses one.
+
+      **Where it goes is not settled, and the name does not answer it.** The probe
+      asks `localhost`, and on 443 that is answered by `010-mail.conf`, not by
+      our vhost -- so a `<Location>` inside `devlocal-common.conf` is never
+      reached. Two ways out, neither verified:
+
+      - put it in the server-wide configuration, outside every `<VirtualHost>`,
+        and rely on vhosts inheriting it (Apache is believed to do this; it was
+        not tested);
+      - or have the probe use `--resolve` with `DEV_DOMAIN`, so it arrives at our
+        vhost with the right SNI. More predictable, and `DEV_DOMAIN` is already in
+        the container.
+
+      **Deliberately not done yet, and the reason is not the cost.** Nothing reads
+      the health status: `condition: service_healthy` appears nowhere, CI never
+      waits on it, and `forge status` only prints it. Tightening "answers HTTP"
+      into "answers 200" changes no decision anyone takes today.
+
+      **What should trigger it:** the first time something depends on health --
+      for instance `forge start` waiting for the web server to actually serve
+      instead of the `curl` loop CI uses. At that point the check becomes
+      infrastructure and has to be exact.
+
+- [ ] **53. `bootstrap.sh`: install with one line** 💬 DISCUSS FIRST — *designed, not
+      started. Discussed as "44" in conversation before that number went to the
+      welcome page.*
+
+      ```bash
+      curl -fsSL https://raw.githubusercontent.com/zelti/php-devforge/main/bootstrap.sh | bash
+      ```
+
+      Roughly eighty lines that install nothing themselves: check that docker is
+      running and git is there, refuse to run under sudo, clone into
+      `~/php-devforge-config` (or `git pull` when it is already that repo), and
+      hand over to the installer everyone already has.
+
+      **The one line with a trick in it**, and it was verified rather than
+      assumed:
+
+      ```bash
+      exec ./install.sh < /dev/tty
+      ```
+
+      Under `curl … | bash` standard input *is the pipe*, not the keyboard, so
+      `install.sh:68` correctly refuses to ask questions it cannot hear:
+
+      ```
+      $ cat install.sh | bash -s -- --domain=test.dev
+      [ERROR] No terminal to ask questions on. Use --yes (plus --skip-cert / --skip-dns).
+      ```
+
+      The fix is to hand the terminal back, never to remove that guard --
+      otherwise the one-line install is a blind `--yes` or nothing.
+
+      **It is a cover, not an engine.** Claude Code's installer works because it
+      installs *itself*: one binary. Here the repository **is** the product -- the
+      compose files, the Dockerfiles, the vhosts, the docroot Lua. Nobody escapes
+      the clone; the bootstrapper only performs it for them.
+
+      What it genuinely buys: it fails *before* cloning when docker is missing,
+      instead of after; it puts the checkout in one predictable place, which is
+      the failure mode behind task 40 (two copies fighting over the same
+      containers); and it is one line to paste into a README or a demo.
+
+      What it costs: a second entry point to maintain and cover in CI, and asking
+      people to pipe the internet into `bash` in a project that touches the system
+      trust store. That is answered by documenting the distrustful path --
+      `curl -o bootstrap.sh …`, read it, run it -- but that has to be written.
+
+      **Not a priority.** Worth doing the day the project is shown to other
+      people; for a single user who already has it cloned it changes nothing.
+
+- [x] **54. pnpm instead of nvm — measured, and not worth it** — DECIDED, NOT DOING
+      Recorded because the idea is a reasonable one and the reason for dropping it
+      is not obvious. Without this note the measurement gets repeated in six
+      months.
+
+      **The chicken-and-egg does dissolve.** The pnpm standalone installer brings
+      its own runtime, so it installs into an image with *no Node at all*, and
+      then puts one on the PATH:
+
+      ```
+      $ curl -fsSL https://get.pnpm.io/install.sh | sh -    # no node in the image
+      pnpm 11.24.0
+      $ pnpm env use --global 24                            -> node v24.20.0
+      ```
+
+      So nvm could be removed. Two things stop it.
+
+      **The prize does not exist.** Per-project Node via `use-node-version`, which
+      is what would have justified the swap -- every site on its own Node without
+      touching the image -- is simply not honoured:
+
+      ```
+      .npmrc: use-node-version=22.20.0
+      $ pnpm run v      ->  sh: 1: node: not found
+      ```
+
+      **And the size goes the wrong way.** Measured inside the real image:
+
+      | | |
+      |---|---|
+      | nvm + Node 24 (what ships) | **277 MB** |
+      | pnpm standalone + Node 24 | **523 MB** |
+      | ...after purging the package cache | 395 MB |
+
+      pnpm's store keeps the downloaded content *and* the linked copy; the node
+      binary alone accounts for 121 MB in there. The swap costs 120-250 MB more
+      per image, on one that is already about 1.9 GB, times three versions.
+
+      **The instinct behind it was sound, but nvm was not the culprit** -- Node
+      itself is, baked into every image and never used by many people. Dropping it
+      and letting whoever needs it run one line (`nvm install 24`, or
+      `pnpm env use --global 24`) would take roughly 277 MB off each image, about
+      830 MB with all three installed. The price is a download the first time Node
+      is used inside a container. Raised, and deliberately left alone: the images
+      stay as they are.

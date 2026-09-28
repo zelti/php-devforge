@@ -89,6 +89,38 @@ It names the site after the project directory when the folder is `public`, makes
 the symlink relative so it also resolves inside the containers, and refuses a
 folder outside the projects directory — the containers can see nothing else.
 
+## Trying a site on a real phone
+
+```bash
+forge tunnel                    # from anywhere inside the project
+forge tunnel my-app             # or name it
+```
+
+A throwaway `*.trycloudflare.com` URL, in the foreground, gone when you close the
+window. No account and no credentials.
+
+Over your own Cloudflare domain instead, for hostnames that stay and several
+sites at once:
+
+```bash
+forge tunnel login                              # browser, once
+forge tunnel add my-app my-app.tunnel.you.com
+forge tunnel on                                 # background, survives a restart
+forge tunnel status | off
+```
+
+Two things it gets right that a hand-written `cloudflared` line does not:
+
+- **It goes to the web server's HTTPS port, not port 80.** Over plain HTTP the app
+  sees no TLS and builds `http://` links inside an `https://` page, so the browser
+  blocks them or the redirects loop — and the usual cure is editing the app's
+  trusted-proxy settings. Over 443 PHP gets `HTTPS=on` for real and the app needs
+  no changes. The self-signed certificate is skipped, and no phone sees it: the
+  public TLS is Cloudflare's.
+- **It rewrites the `Host` header.** The server picks the project from it, and a
+  tunnel sends its own name, which is not under the dev domain. Without the
+  rewrite you get the default page instead of your app.
+
 **Pick a PHP version per request** by suffixing the host: `my-app--p83.phpforge.dev`
 runs the same code on 8.3. No configuration changes.
 

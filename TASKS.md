@@ -2050,3 +2050,51 @@ reasoning about them.
       830 MB with all three installed. The price is a download the first time Node
       is used inside a container. Raised, and deliberately left alone: the images
       stay as they are.
+
+---
+
+- [x] **55. A site could not be opened on a real phone** — DONE
+
+      Testing anything on an actual phone meant a hand-written `cloudflared` line
+      living inside one project, copied to the next one. Two details decide
+      whether it works at all, and both are easy to get wrong:
+
+      **The `Host` header.** The server picks the project from it, and a tunnel
+      sends its own name — which is not under the dev domain. Without
+      `--http-host-header` you get the default page instead of your app.
+
+      **The port.** The obvious target is 80, and that is the trap. Over plain
+      HTTP the app sees no TLS and builds `http://` links inside an `https://`
+      page: the browser blocks them, or the redirects loop. The usual cure is
+      editing the app's trusted-proxy settings, which is not work a dev
+      environment should be asking for. `forge tunnel` goes to **443** instead,
+      so PHP gets `HTTPS=on` for real and nothing in the app changes. Measured on
+      the same page, same server, same request:
+
+      | | |
+      |---|---|
+      | via `http://apachedev:80` | 23 links, all `http://` |
+      | via `https://apachedev:443` | 23 links, all `https://` |
+
+      The self-signed certificate is skipped with `--no-tls-verify`, and no phone
+      ever sees it: the public TLS is Cloudflare's own. The HSTS that Chrome pins
+      on every `.dev` name never comes up either, since the browser visits
+      trycloudflare.com or your domain.
+
+      Two shapes, by whether credentials are handed over:
+
+      ```bash
+      forge tunnel                                  # throwaway URL, no account
+      forge tunnel login                            # your Cloudflare domain
+      forge tunnel add my-app my-app.tunnel.you.com
+      forge tunnel on                               # background, several sites
+      ```
+
+      **Two bugs found while replacing the script.** It named `apachedev`
+      outright, so it would have broken the day anyone turned the nginx profile
+      on — the command reads `is_on nginx` now. And its only precondition check
+      was that the compose **network** existed, which mailpit and dnsmasq keep
+      alive on their own: the check passed while there was nothing to tunnel to,
+      and the failure arrived later as a name-resolution error naming no cause.
+      It checks the web server itself now, via the `need_running` that was
+      already there.

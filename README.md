@@ -186,6 +186,7 @@ forge restart
 forge status                 # what is running, and how it is configured
 
 forge link ~/code/app/public # publish a project at app.<domain>
+forge tunnel                 # and a public URL for it, to try on a real phone
 
 forge php list               # PHP versions, and which are installed
 forge php on|off 8.3         # install one, or free the ~2 GB it uses

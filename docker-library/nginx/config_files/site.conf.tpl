@@ -54,3 +54,21 @@ server {
     ssl_certificate_key ${SSL_KEY};
     include /etc/nginx/snippets/common_server_config.conf;
 }
+
+# Catch-all for a tunnel's own hostname (trycloudflare.com, or a Cloudflare
+# custom domain) -- it matches neither block above, since it is not under
+# DEV_DOMAIN. Without this, nginx's implicit default for an unmatched name is
+# whichever server block is *first in the file*, which is Mailpit's -- the
+# same failure shape task 55 found and fixed on the Apache side.
+server {
+    listen 80 default_server;
+    include /etc/nginx/snippets/common_server_config.conf;
+}
+
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    ssl_certificate     ${SSL_CERT};
+    ssl_certificate_key ${SSL_KEY};
+    include /etc/nginx/snippets/common_server_config.conf;
+}

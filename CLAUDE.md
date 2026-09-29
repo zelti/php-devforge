@@ -45,7 +45,7 @@ This is the core mechanism and it spans three files.
 
 `docker-library/httpd/config_files/php-fpm.conf` is a legacy/unused fallback — the active handler selection lives in the two vhost files. Both vhosts are duplicates apart from the `SSLEngine` block; **changes to routing must be applied to both**.
 
-An `nginx`/OpenResty alternative exists under `docker-library/nginx/` (same reversal idea, `map $host $php_backend`), but it is commented out in `docker-compose.yml` and its Lua uses a broken pattern (`[0-9]{2}` / `\\.`, which are not Lua patterns) plus a `gsub("--", "/")` that does *not* reverse segments — it is not equivalent to the Apache path and is effectively unmaintained.
+An `nginx`/OpenResty alternative exists under `docker-library/nginx/` (same reversal logic, in `resolve_docroot.lua`'s `rewrite_by_lua_file` hook) as the `nginxdev` service, gated behind the `nginx` profile — it *replaces* `apachedev` rather than adding to it, since both want ports 80 and 443. It is equivalent to the Apache path, including the tunnel mechanism (`.tunnel/` lookup and `--php` pin): `site.conf.tpl` carries the same `default_server` catch-all `devlocal-common.conf` needed on the Apache side, for the same reason (an unmatched host otherwise falls to the first server block in the file, Mailpit's).
 
 ## Container layout
 

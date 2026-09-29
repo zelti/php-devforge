@@ -128,6 +128,28 @@ else
     path_only = host:match("^(.*)%." .. domain .. "$")
 end
 
+-- A tunnel's public hostname is not under dev_domain, so path_only stayed nil.
+-- `forge tunnel` drops a symlink named after it under .tunnel/ (a sibling of
+-- sites/, not nested in it) while the tunnel is up; if one matches, serve it
+-- directly. Mirrors the Apache side down to the two guards: whoever is
+-- calling supplies this host, and it is about to become part of a path.
+local tunnel_docroot = nil
+if not path_only and host:match("^[%w%.%-]+$") and not host:find("%.%.") then
+    local alias = BASE .. "/.tunnel/" .. host
+    if is_dir(alias) then
+        tunnel_docroot = alias
+        -- No --pNN is possible on a tunnel's own hostname, so a version
+        -- pinned with `forge tunnel ... --php` lives in a same-named file
+        -- next to the alias instead.
+        local f = io.open(BASE .. "/.tunnel/" .. host .. ".php", "r")
+        if f then
+            local v = f:read("*l")
+            f:close()
+            if v and v:match("^[0-9][0-9]$") then version = v end
+        end
+    end
+end
+
 version = version or default_version
 if version and version:match("^[0-9][0-9]$") then
     -- Only for .php: a static file needs no backend, and "/" reaches here again
@@ -139,33 +161,39 @@ if version and version:match("^[0-9][0-9]$") then
     ngx.var.php_backend = "php" .. version .. "dev"
 end
 
-if not path_only or path_only == "" then
+-- The front-controller resolution below has to run for the tunnel branch too
+-- -- unlike Apache's .htaccess, nginx never reads one on its own, so skipping
+-- this here left every route but "/" 404 the day a tunnel host resolved a
+-- docroot. Only the "nothing to serve" case still returns early.
+if tunnel_docroot then
+    ngx.var.docroot = tunnel_docroot
+elseif not path_only or path_only == "" then
     return
-end
+else
+    -- Split on "--" only. A plain "[^-]+" would split on every hyphen, so a project
+    -- called my-app became sites/app/my instead of sites/my-app.
+    -- \1 cannot appear in a host name, so it is a safe temporary separator.
+    local parts = {}
+    local marked = (path_only:gsub("%-%-", "\1"))
+    for part in marked:gmatch("[^\1]+") do
+        parts[#parts + 1] = part
+    end
 
--- Split on "--" only. A plain "[^-]+" would split on every hyphen, so a project
--- called my-app became sites/app/my instead of sites/my-app.
--- \1 cannot appear in a host name, so it is a safe temporary separator.
-local parts = {}
-local marked = (path_only:gsub("%-%-", "\1"))
-for part in marked:gmatch("[^\1]+") do
-    parts[#parts + 1] = part
-end
+    -- Read right to left: the host is the path reversed.
+    local reversed = {}
+    for i = #parts, 1, -1 do
+        reversed[#reversed + 1] = parts[i]
+    end
 
--- Read right to left: the host is the path reversed.
-local reversed = {}
-for i = #parts, 1, -1 do
-    reversed[#reversed + 1] = parts[i]
+    -- sites/ is a shortcut: anything linked in there gets a short host name. Tried
+    -- first, with the full path from the root as the fallback, so both
+    --   mi-app.dominio                   -> sites/mi-app
+    --   public--mi-app--projects.dominio -> projects/mi-app/public
+    -- keep working.
+    local path = table.concat(reversed, "/")
+    local shortcut = BASE .. "/sites/" .. path
+    ngx.var.docroot = is_dir(shortcut) and shortcut or (BASE .. "/" .. path)
 end
-
--- sites/ is a shortcut: anything linked in there gets a short host name. Tried
--- first, with the full path from the root as the fallback, so both
---   mi-app.dominio                   -> sites/mi-app
---   public--mi-app--projects.dominio -> projects/mi-app/public
--- keep working.
-local path = table.concat(reversed, "/")
-local shortcut = BASE .. "/sites/" .. path
-ngx.var.docroot = is_dir(shortcut) and shortcut or (BASE .. "/" .. path)
 
 -- Off is a brake on the guessing, not a behaviour choice: with the rule read
 -- from the project's own file, turning it off only breaks the app.

@@ -493,7 +493,7 @@ cmd_link() {
 #
 # Two shapes, and the difference is only whether you hand over credentials:
 #
-#   forge tunnel [site]     nobody's account, random *.trycloudflare.com URL,
+#   forge tunnel [folder]   nobody's account, random *.trycloudflare.com URL,
 #                           foreground, gone when you close the window
 #   forge tunnel add ...    your own Cloudflare domain, a hostname that stays,
 #                           several sites at once, running in the background
@@ -534,70 +534,89 @@ web_container() { if is_on nginx; then echo nginxdev; else echo apachedev; fi; }
 sites_dir() { printf '%s/sites\n' "$(projects_dir)"; }
 published() { ls "$(sites_dir)" 2>/dev/null | tr '\n' ' '; }
 
-# The site whose folder you are standing in, from anywhere inside it -- the
-# project root, its public/ folder, or five directories down in app/Models.
-#
-# sites/ holds one symlink per project, but it points at the *document root*,
-# and for every framework that is .../public. So the project is the folder above
-# it, worked out with the same list of names cmd_link uses to name a site in the
-# first place. Comparing against the docroot alone would answer "no project" from
-# anywhere outside public/, which is most of where anyone works.
-site_from_dir() {
-    local abs link target proj best="" bestlen=0
-    abs="$(cd "${1:-.}" 2>/dev/null && pwd -P)" || return 1
+# Sibling of sites/, not nested inside it: sites/ is what you publish by
+# hand with `forge link`; .tunnel/ is what `forge tunnel` manages on its own,
+# and the two should not have to know about each other.
+tunnel_dir() { printf '%s/.tunnel\n' "$(projects_dir)"; }
 
-    for link in "$(sites_dir)"/*; do
-        [ -e "$link" ] || continue
-        target="$(cd "$link" 2>/dev/null && pwd -P)" || continue
+# What to tunnel: an explicit path (exactly like `forge link <path>`), an
+# existing sites/ shortcut (kept working as a convenience, never required),
+# or -- with no argument -- the directory you are standing in. Unlike the
+# need_site() this replaced, it never requires sites/: .tunnel/ points
+# straight at the project, so nothing has to be published there first.
+tunnel_target() {
+    local arg="${1:-.}" root abs
+    root="$(sed -ne 's/^PROJECTS_DIR=//p' .env)"
 
-        proj="$target"
-        case "$(basename "$target")" in
-            public|web|htdocs|public_html|www) proj="$(dirname "$target")" ;;
-        esac
+    abs="$(cd "$INVOCATION_DIR" && cd "$arg" 2>/dev/null && pwd)" || {
+        if [ -n "${1:-}" ] && [ -e "$(sites_dir)/$1" ]; then
+            abs="$(cd "$(sites_dir)/$1" 2>/dev/null && pwd)" || { err "Broken link: sites/$1"; exit 1; }
+        else
+            err "No such folder: $arg"
+            [ -n "${1:-}" ] && echo "  Published:  $(published)" >&2
+            exit 1
+        fi
+    }
 
-        # Inside the project, or the project itself. Deliberately not the other
-        # way round: standing in the projects folder is above all of them at
-        # once, and answering with whichever sorted first would be a guess.
-        case "$abs/" in
-            "$proj"/*)
-                # Longest wins, so a project checked out inside another resolves
-                # to the inner one rather than to alphabetical luck.
-                [ "${#proj}" -gt "$bestlen" ] && { best="$(basename "$link")"; bestlen="${#proj}"; }
-                ;;
-        esac
-    done
+    case "$abs/" in
+        "$root"/*) ;;
+        *) err "That folder is outside $root, so the containers cannot reach it."; exit 1 ;;
+    esac
 
-    [ -n "$best" ] || return 1
-    printf '%s\n' "$best"
+    printf '%s\n' "$abs"
 }
 
-# A published site, named or worked out from where you are.
-need_site() {
-    local name="${1:-}"
-    if [ -z "$name" ]; then
-        name="$(site_from_dir "$INVOCATION_DIR")" || {
-            err "You are not inside a published project, and named no site."
-            echo "  Name one:   forge tunnel <site>" >&2
-            echo "  Published:  $(published)" >&2
-            exit 1
-        }
-    elif [ ! -e "$(sites_dir)/$name" ]; then
-        err "No site called '$name'."
-        echo "  Publish it:  forge link <folder>" >&2
-        echo "  Published:   $(published)" >&2
-        exit 1
-    fi
+# Same naming rule cmd_link uses: frameworks all point at .../public, so the
+# folder name alone is useless -- fall back to the project directory above it.
+# Cosmetic only here (shown in messages, and as the SNI cloudflared presents);
+# nothing in the tunnel mechanism depends on it being unique.
+tunnel_name() {
+    local name; name="$(basename "$1")"
+    case "$name" in
+        public|web|htdocs|public_html|www) name="$(basename "$(dirname "$1")")" ;;
+    esac
     printf '%s\n' "$name"
+}
+
+# --php's argument: a real version, and one actually installed -- otherwise
+# the failure would show up later as a broken proxy behind the tunnel instead
+# of a clear message now.
+tunnel_require_installed() {
+    local v; v="$(normalise "$1")"
+    grep -qx "$v" <<<"$(installed_versions)" || {
+        err "PHP $(pretty <<<"$v") is not installed."
+        echo "  Install it:  forge php on $(pretty <<<"$v")" >&2
+        exit 1
+    }
+    printf '%s\n' "$v"
 }
 
 # cloudflared against your account. ~/.cloudflared is where it keeps the login
 # certificate and one credentials file per tunnel; mounting it read-write is the
 # whole reason this wrapper is separate from the read-only one in compose.
 tunnel_cf() {
+    # mkdir'd here on purpose: a missing bind-mount source is created by the
+    # Docker daemon, which runs as root, and cloudflared then cannot write its
+    # own cert into a directory it does not own. Running the real command as
+    # root sidesteps a mismatch inside the image itself: it declares user
+    # 65532 at runtime, but ships /home/nonroot owned by uid 1000, so no
+    # single --user satisfies both. HOME is set to match the mountpoint, since
+    # that is where cloudflared looks for its cert unless told otherwise.
+    mkdir -p "$CLOUDFLARED_HOME"
     local tty=(); [ -t 0 ] && [ -t 1 ] && tty=(-it)
     docker run --rm "${tty[@]+"${tty[@]}"}" \
+        --user 0:0 \
+        -e HOME=/home/nonroot \
         -v "${CLOUDFLARED_HOME}:/home/nonroot/.cloudflared" \
         "$TUNNEL_IMAGE" "$@"
+
+    # Whatever it just wrote is root's. Handed back with a throwaway
+    # container instead of `sudo` on the host -- and made group/other
+    # readable too, since the background cloudflared service in
+    # docker-compose.override.yml reads these same files as its image's own
+    # default user (65532), not yours and not root.
+    docker run --rm -v "${CLOUDFLARED_HOME}:/data" alpine \
+        sh -c "chown -R $(id -u):$(id -g) /data && chmod -R u+rwX,go+rX /data"
 }
 
 need_login() {
@@ -625,7 +644,7 @@ tunnel_ensure() {
 # entry has to be the catch-all, so editing it in place in bash is a worse idea
 # than generating it from the flat mapping in $TUNNEL_SITES.
 tunnel_write_config() {
-    local uuid web domain site hostname
+    local uuid web domain name hostname
     uuid="$(tunnel_uuid)"
     web="$(web_container)"
     domain="$(dev_domain)"
@@ -638,26 +657,56 @@ tunnel_write_config() {
         echo "credentials-file: /home/nonroot/.cloudflared/${uuid}.json"
         echo ""
         echo "ingress:"
-        while IFS=$'\t' read -r site hostname; do
-            [ -n "${site:-}" ] || continue
+        while IFS=$'\t' read -r name hostname; do
+            [ -n "${name:-}" ] || continue
             echo "  - hostname: ${hostname}"
             # 443 and not 80, and noTLSVerify because of it: see the note above
             # cmd_tunnel. This is what spares every app its proxy settings.
             echo "    service: https://${web}:443"
             echo "    originRequest:"
             echo "      noTLSVerify: true"
-            echo "      originServerName: ${site}.${domain}"
-            echo "      httpHostHeader: ${site}.${domain}"
+            echo "      originServerName: ${name}.${domain}"
         done < "$TUNNEL_SITES"
         echo "  - service: http_status:404"
     } > "$TUNNEL_CONFIG"
 }
 
+# .tunnel/ holds one symlink per live public hostname, pointing straight at
+# the project it publishes -- what resolve_docroot.lua reads instead of a
+# rewritten Host header -- plus one same-named ".php" file next to it when a
+# version was pinned with --php. Only entries NOT in $TUNNEL_SITES are swept:
+# those are the persistent ones from `tunnel add`, and a quick tunnel's
+# cleanup has no business touching them. Also run on start, to sweep whatever
+# a window closed the hard way (crash, kill -9) left behind.
+tunnel_clean() {
+    local dir; dir="$(tunnel_dir)"
+    [ -d "$dir" ] || return 0
+    local keep=""
+    [ -f "$TUNNEL_SITES" ] && keep="$(awk -F'\t' '{print $2}' "$TUNNEL_SITES")"
+    local entry base
+    for entry in "$dir"/*; do
+        [ -e "$entry" ] || continue
+        base="$(basename "$entry")"; base="${base%.php}"
+        grep -qxF "$base" <<<"$keep" || rm -f "$entry"
+    done
+}
+
 # Anonymous. Nothing is created, nothing is stored, and it dies with the window.
 tunnel_quick() {
-    local site host web
-    site="$(need_site "${1:-}")"
-    host="${site}.$(dev_domain)"
+    local arg="" ver="" abs name root relpath sni web public_host=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --php) ver="${2:-}"; shift 2 ;;
+            *) arg="$1"; shift ;;
+        esac
+    done
+    [ -n "$ver" ] && ver="$(tunnel_require_installed "$ver")"
+
+    abs="$(tunnel_target "$arg")"
+    name="$(tunnel_name "$abs")"
+    root="$(sed -ne 's/^PROJECTS_DIR=//p' .env)"
+    relpath="${abs#"$root"/}"
+    sni="${name}.$(dev_domain)"
     web="$(web_container)"
 
     # The network is the wrong thing to check: it lives as long as any container
@@ -666,31 +715,65 @@ tunnel_quick() {
     # failure came later as a name-resolution error that named no cause.
     need_running "$web"
 
-    warn "This puts ${host} on the public internet, with nothing guarding it."
+    mkdir -p "$(tunnel_dir)"
+    tunnel_clean
+    trap tunnel_clean EXIT INT TERM
+
+    warn "This puts ${name} on the public internet, with nothing guarding it."
     echo "  It lasts as long as this window. Ctrl+C closes it."
     echo ""
-    info "Tunnelling https://${web}:443 as ${host}"
+    info "Tunnelling https://${web}:443"
     echo "  The public URL appears below."
     echo ""
 
-    local tty=(); [ -t 0 ] && [ -t 1 ] && tty=(-it)
-    exec docker run --rm "${tty[@]+"${tty[@]}"}" \
+    # Piped through a reader instead of exec'd, so the trycloudflare.com URL can
+    # be caught as it goes by and turned into the .tunnel/ symlink. No -it
+    # here: cloudflared needs no terminal to run, and docker refuses to
+    # allocate one once stdout is a pipe rather than a real tty. The loop runs
+    # in a subshell (the pipe causes that), so a variable set inside it --
+    # public_host -- would not survive out here; that is why cleanup is a trap
+    # on the whole directory rather than on one remembered name.
+    docker run --rm \
         --network "$(compose_network)" \
         "$TUNNEL_IMAGE" \
         tunnel --url "https://${web}:443" \
-               --http-host-header "$host" \
-               --origin-server-name "$host" \
-               --no-tls-verify
+               --origin-server-name "$sni" \
+               --no-tls-verify 2>&1 | while IFS= read -r line; do
+        echo "$line"
+        if [ -z "$public_host" ]; then
+            # grep exits 1 on every line that is not the one with the URL --
+            # nearly all of them -- and script runs under `set -e`, so an
+            # unguarded assignment here would kill the whole tunnel on the
+            # first line that doesn't match.
+            public_host="$(printf '%s\n' "$line" | grep -oE '[a-z0-9-]+\.trycloudflare\.com' || true)"
+            if [ -n "$public_host" ]; then
+                ln -sfn "../${relpath}" "$(tunnel_dir)/${public_host}"
+                [ -n "$ver" ] && printf '%s\n' "$ver" > "$(tunnel_dir)/${public_host}.php"
+            fi
+        fi
+    done
 }
 
 tunnel_add() {
     need_login
-    local site host suffix
-    site="$(need_site "${1:-}")"
-    host="${2:-}"
+    local arg="" host="" ver="" abs name root relpath suffix old_host
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --php) ver="${2:-}"; shift 2 ;;
+            *) if [ -z "$arg" ]; then arg="$1"; else host="$1"; fi; shift ;;
+        esac
+    done
+    [ -n "$ver" ] && ver="$(tunnel_require_installed "$ver")"
+
+    abs="$(tunnel_target "$arg")"
+    name="$(tunnel_name "$abs")"
+    root="$(sed -ne 's/^PROJECTS_DIR=//p' .env)"
+    relpath="${abs#"$root"/}"
 
     mkdir -p "$TUNNEL_DIR"
     [ -f "$TUNNEL_SITES" ] || : > "$TUNNEL_SITES"
+
+    old_host="$(awk -F'\t' -v s="$name" '$1 == s { print $2; exit }' "$TUNNEL_SITES")"
 
     if [ -z "$host" ]; then
         # Borrow the shape of whatever is already mapped, so only the first one
@@ -698,10 +781,10 @@ tunnel_add() {
         suffix="$(awk -F'\t' 'NR==1 { sub(/^[^.]*\./, "", $2); print $2; exit }' "$TUNNEL_SITES")"
         [ -n "$suffix" ] || {
             err "No hostname given, and none to copy the shape from."
-            echo "  First one spells it out:  forge tunnel add $site $site.tunnel.yourdomain.com" >&2
+            echo "  First one spells it out:  forge tunnel add $name $name.tunnel.yourdomain.com" >&2
             exit 1
         }
-        host="${site}.${suffix}"
+        host="${name}.${suffix}"
     fi
 
     tunnel_ensure
@@ -709,46 +792,99 @@ tunnel_add() {
     info "Pointing ${host} at this machine"
     tunnel_cf tunnel route dns "$TUNNEL_NAME" "$host"
 
-    # Replace any existing line for this site, then append.
+    mkdir -p "$(tunnel_dir)"
+    if [ -n "$old_host" ] && [ "$old_host" != "$host" ]; then
+        rm -f "$(tunnel_dir)/${old_host}" "$(tunnel_dir)/${old_host}.php"
+    fi
+    ln -sfn "../${relpath}" "$(tunnel_dir)/${host}"
+    # Each `add` fixes the whole state as typed this time -- so a version
+    # pinned before and not repeated now is dropped, not kept by accident.
+    if [ -n "$ver" ]; then
+        printf '%s\n' "$ver" > "$(tunnel_dir)/${host}.php"
+    else
+        rm -f "$(tunnel_dir)/${host}.php"
+    fi
+
+    # Replace any existing line for this name, then append.
     local tmp; tmp="$(mktemp)"
-    grep -v "^${site}"$'\t' "$TUNNEL_SITES" > "$tmp" 2>/dev/null || true
-    printf '%s\t%s\n' "$site" "$host" >> "$tmp"
+    grep -v "^${name}"$'\t' "$TUNNEL_SITES" > "$tmp" 2>/dev/null || true
+    printf '%s\t%s\n' "$name" "$host" >> "$tmp"
     sort -o "$TUNNEL_SITES" "$tmp"; rm -f "$tmp"
 
     tunnel_write_config
-    info "${host}  ->  ${site}.$(dev_domain)"
-    echo "  Start it:  forge tunnel on"
+    info "${host}  ->  ${name}"
+    if is_on tunnel; then
+        # `docker compose up -d` does not restart a container already running
+        # just because a file it mounts changed -- compose has no way to see
+        # that, so cloudflared would otherwise keep serving 404 for this
+        # hostname with the old ingress table until something restarts it.
+        info "Reloading the background tunnel"
+        docker compose restart cloudflared >/dev/null
+    else
+        echo "  Start it:  forge tunnel on"
+    fi
 }
 
 tunnel_rm() {
-    local site tmp
-    site="${1:-}"
-    [ -n "$site" ] || { err "usage: forge tunnel rm <site>"; exit 1; }
+    local name tmp hostname
+    name="${1:-}"
+    [ -n "$name" ] || { err "usage: forge tunnel rm <name>"; exit 1; }
     [ -f "$TUNNEL_SITES" ] || { err "Nothing is mapped."; exit 1; }
 
-    grep -q "^${site}"$'\t' "$TUNNEL_SITES" || { err "'$site' is not mapped."; exit 1; }
+    grep -q "^${name}"$'\t' "$TUNNEL_SITES" || { err "'$name' is not mapped."; exit 1; }
+    hostname="$(awk -F'\t' -v s="$name" '$1 == s { print $2; exit }' "$TUNNEL_SITES")"
 
     tmp="$(mktemp)"
-    grep -v "^${site}"$'\t' "$TUNNEL_SITES" > "$tmp" || true
+    grep -v "^${name}"$'\t' "$TUNNEL_SITES" > "$tmp" || true
     mv "$tmp" "$TUNNEL_SITES"
 
+    rm -f "$(tunnel_dir)/${hostname}" "$(tunnel_dir)/${hostname}.php"
+
     tunnel_write_config
-    info "Removed $site"
+    info "Removed $name"
+    if is_on tunnel; then
+        info "Reloading the background tunnel"
+        docker compose restart cloudflared >/dev/null
+    fi
     # The DNS record is left alone on purpose: deleting it is not this command's
     # to guess at, and a stale CNAME to a tunnel simply stops resolving.
     warn "Its DNS record still exists. Remove it in the Cloudflare dashboard if you want it gone."
 }
 
 tunnel_status() {
-    local site hostname
+    local name hostname ver
     if [ -f "$TUNNEL_SITES" ] && [ -s "$TUNNEL_SITES" ]; then
-        while IFS=$'\t' read -r site hostname; do
-            [ -n "${site:-}" ] || continue
-            printf '  https://%-40s -> %s.%s\n' "$hostname" "$site" "$(dev_domain)"
+        while IFS=$'\t' read -r name hostname; do
+            [ -n "${name:-}" ] || continue
+            ver=""
+            if [ -f "$(tunnel_dir)/${hostname}.php" ]; then
+                ver=" (PHP $(pretty <<<"$(cat "$(tunnel_dir)/${hostname}.php")"))"
+            fi
+            printf '  https://%-40s -> %s%s\n' "$hostname" "$name" "$ver"
         done < "$TUNNEL_SITES"
     else
-        echo "  nothing mapped yet   (forge tunnel add <site> <hostname>)"
+        echo "  nothing mapped yet   (forge tunnel add <folder> <hostname>)"
     fi
+
+    # Anything else in .tunnel/ is not one of the rows above, so it can only
+    # be a `forge tunnel` running right now in some other window -- it was
+    # never added, and tunnel_clean() sweeps it the moment that window closes.
+    local dir keep="" entry host target shown=0
+    dir="$(tunnel_dir)"
+    [ -f "$TUNNEL_SITES" ] && keep="$(awk -F'\t' '{print $2}' "$TUNNEL_SITES")"
+    if [ -d "$dir" ]; then
+        for entry in "$dir"/*; do
+            [ -L "$entry" ] || continue
+            host="$(basename "$entry")"
+            grep -qxF "$host" <<<"$keep" && continue
+            if [ "$shown" -eq 0 ]; then echo ""; echo "  running now, not added:"; shown=1; fi
+            target="$(readlink "$entry")"
+            ver=""
+            [ -f "${entry}.php" ] && ver=" (PHP $(pretty <<<"$(cat "${entry}.php")"))"
+            printf '  https://%-40s -> %s%s\n' "$host" "${target#../}" "$ver"
+        done
+    fi
+
     echo ""
     if is_on tunnel; then echo "  tunnel: ON"; else echo "  tunnel: off"; fi
     [ -f "${CLOUDFLARED_HOME}/cert.pem" ] || echo "  not logged in        (forge tunnel login)"
@@ -763,21 +899,28 @@ cmd_tunnel() {
         rm)     shift; tunnel_rm "$@" ;;
         on)     [ -f "$TUNNEL_CONFIG" ] || {
                     err "Nothing is mapped yet."
-                    echo "  forge tunnel login && forge tunnel add <site> <hostname>" >&2
+                    echo "  forge tunnel login && forge tunnel add <folder> <hostname>" >&2
                     exit 1; }
                 need_login
-                tunnel_write_config   # the web server may have changed since
+                # If it was already on, `compose_up` below is a no-op -- the
+                # rewrite the web server may have changed since still needs a
+                # restart to actually reach the running container.
+                local was_on=0; is_on tunnel && was_on=1
+                tunnel_write_config
                 cmd_profile on tunnel
+                [ "$was_on" = 1 ] && docker compose restart cloudflared >/dev/null
                 tunnel_status ;;
         off)    cmd_profile off tunnel ;;
         status) tunnel_status ;;
         -h|--help)
-                echo "  forge tunnel [site]            a throwaway public URL, no account needed"
-                echo "  forge tunnel login             hand over your Cloudflare credentials"
-                echo "  forge tunnel add <site> [host] publish a site at a hostname that stays"
-                echo "  forge tunnel rm <site>         stop publishing it"
-                echo "  forge tunnel on|off|status     the background tunnel" ;;
-        *)      tunnel_quick "${1:-}" ;;
+                echo "  forge tunnel [folder] [--php <v>]      a throwaway public URL, no account needed"
+                echo "                                         (no folder: uses where you are standing)"
+                echo "  forge tunnel login                     hand over your Cloudflare credentials"
+                echo "  forge tunnel add <folder> [host] [--php <v>]"
+                echo "                                         publish at a hostname that stays"
+                echo "  forge tunnel rm <name>                  stop publishing it"
+                echo "  forge tunnel on|off|status              the background tunnel" ;;
+        *)      tunnel_quick "$@" ;;
     esac
 }
 
@@ -851,7 +994,7 @@ PHP DevForge $(forge_version)
   forge logs  [version|service] follow the logs; everything if you name nothing
 
   forge link <folder> [name]   publish a project: symlinks it under sites/
-  forge tunnel [site]          a public URL for it, to try on a real phone
+  forge tunnel [folder] [--php <v>]  a public URL, to try on a real phone
   forge tunnel login|add|rm    the same over your own Cloudflare domain
   forge tunnel on|off|status   that one, in the background
 

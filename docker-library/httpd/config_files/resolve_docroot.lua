@@ -39,6 +39,14 @@ local function has(list, ver)
     return false
 end
 
+-- A tunnel's public hostname (trycloudflare.com, or a Cloudflare custom
+-- domain) is not ours to name, so it is about to become part of a filesystem
+-- path -- checked before it ever does. Also true of any ordinary dev_domain
+-- host, but that path never reaches this check since it always matches first.
+local function safe_host(host)
+    return host:match("^[%w%.%-]+$") ~= nil and not host:find("%.%.")
+end
+
 -- Answered from the translate-name hook, not from set_php_handler: a "/" reaches
 -- PHP through mod_dir's DirectoryIndex, whose internal redirect throws away a body
 -- written that late -- the request ends as an empty 200 on a directory. Translate
@@ -105,7 +113,22 @@ function silly_mapper(r)
         -- Si no tiene sufijo PHP, capturar el subdominio completo
         path_only = host:match("^(.*)%." .. dev_domain:gsub("%.", "%%.") .. "$")
     end
-        
+
+    -- A tunnel's public hostname is not under dev_domain, so path_only stayed
+    -- nil. `forge tunnel` drops a symlink named after that hostname under
+    -- .tunnel/ (a sibling of sites/, not nested in it -- unpublished projects
+    -- can be tunnelled too) while the tunnel is up; if one matches, serve it
+    -- directly instead of rewriting Host -- rewriting made the app build
+    -- links to the dev-domain name instead of the address the phone actually
+    -- visited.
+    if not path_only and safe_host(host) then
+        local alias = docroot .. "/.tunnel/" .. host
+        if is_dir(alias) then
+            r:set_document_root(alias)
+            return apache2.DECLINED
+        end
+    end
+
     if path_only and path_only ~= "" then
         -- Manejar la lógica de reemplazo
         local final_path = path_only
@@ -177,8 +200,21 @@ function set_php_handler(r)
     local dev_domain = os.getenv("DEV_DOMAIN")
     if not dev_domain then return apache2.DECLINED end
 
-    local ver = r.hostname:match("%-%-p([0-9][0-9])%." .. dev_domain:gsub("%.", "%%.") .. "$")
-                or os.getenv("PHP_VERSION")
+    local host = r.hostname
+    local ver = host:match("%-%-p([0-9][0-9])%." .. dev_domain:gsub("%.", "%%.") .. "$")
+
+    -- A tunnel's own hostname carries no --pNN suffix -- it is not ours to
+    -- name -- so a version pinned with `forge tunnel ... --php` lives in a
+    -- file dropped next to its .tunnel/ alias instead, keyed the same way.
+    if not ver and safe_host(host) then
+        local f = io.open("/home/php-devforge/public_html/.tunnel/" .. host .. ".php", "r")
+        if f then
+            ver = f:read("*l")
+            f:close()
+        end
+    end
+
+    ver = ver or os.getenv("PHP_VERSION")
 
     -- No version means no handler, so Apache would serve the .php as text.
     if not ver or not ver:match("^[0-9][0-9]$") then

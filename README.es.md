@@ -187,6 +187,7 @@ forge restart
 forge status                 # qué corre y cómo está configurado
 
 forge link ~/code/app/public # publicar un proyecto en app.<dominio>
+forge tunnel                 # y una URL pública, para probarlo en un móvil de verdad
 
 forge php list               # versiones de PHP, y cuáles están instaladas
 forge php on|off 8.3         # instalar una, o liberar los ~2 GB que ocupa

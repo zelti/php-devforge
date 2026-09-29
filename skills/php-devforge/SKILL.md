@@ -89,6 +89,54 @@ It names the site after the project directory when the folder is `public`, makes
 the symlink relative so it also resolves inside the containers, and refuses a
 folder outside the projects directory — the containers can see nothing else.
 
+## Trying a site on a real phone
+
+```bash
+forge tunnel                    # standing inside the project, uses this folder
+forge tunnel ~/code/my-app/public   # or an explicit path, like forge link
+forge tunnel my-app              # or an existing sites/ shortcut, if you have one
+forge tunnel my-app --php 8.3    # pin a PHP version for this tunnel only
+```
+
+Never requires `forge link` first — a project you have not published under
+`sites/` can be tunnelled directly. A throwaway `*.trycloudflare.com` URL, in
+the foreground, gone when you close the window. No account and no credentials.
+
+Over your own Cloudflare domain instead, for hostnames that stay and several
+sites at once:
+
+```bash
+forge tunnel login                              # browser, once
+forge tunnel add my-app my-app.tunnel.you.com [--php 8.3]
+forge tunnel on                                 # background, survives a restart
+forge tunnel status | off
+forge tunnel rm my-app
+```
+
+`status` also lists any quick tunnel currently running in another window, under
+"running now, not added" — it was never given a stable hostname, so it is not
+one of the rows above, just whatever `.tunnel/` currently holds that is not in
+that list.
+
+Three things it gets right that a hand-written `cloudflared` line does not:
+
+- **It goes to the web server's HTTPS port, not port 80.** Over plain HTTP the app
+  sees no TLS and builds `http://` links inside an `https://` page, so the browser
+  blocks them or the redirects loop — and the usual cure is editing the app's
+  trusted-proxy settings. Over 443 PHP gets `HTTPS=on` for real and the app needs
+  no changes. The self-signed certificate is skipped, and no phone sees it: the
+  public TLS is Cloudflare's.
+- **It leaves the `Host` header alone.** The server picks the project from it,
+  and a tunnel sends its own name, not under the dev domain — but rewriting
+  that header (an earlier version did) made the app build every link from the
+  rewritten name instead, which the phone can't reach. `forge tunnel` instead
+  drops a symlink named after the tunnel's hostname under `.tunnel/` (a
+  sibling of `sites/`, not nested in it), so the server resolves the public
+  name straight to the project and the app sees its own real address.
+- **PHP version follows you, even though the tunnel's hostname cannot carry
+  a `--pNN` suffix.** `--php` writes the version to a same-named file next to
+  the `.tunnel/` alias instead, and the Lua reads it from there for that host.
+
 **Pick a PHP version per request** by suffixing the host: `my-app--p83.phpforge.dev`
 runs the same code on 8.3. No configuration changes.
 

@@ -2050,3 +2050,120 @@ reasoning about them.
       830 MB with all three installed. The price is a download the first time Node
       is used inside a container. Raised, and deliberately left alone: the images
       stay as they are.
+
+---
+
+- [x] **55. A site could not be opened on a real phone** — DONE
+
+      Testing anything on an actual phone meant a hand-written `cloudflared` line
+      living inside one project, copied to the next one. Two details decide
+      whether it works at all, and both are easy to get wrong:
+
+      **The `Host` header.** The server picks the project from it, and a tunnel
+      sends its own name — which is not under the dev domain, so without help
+      you get the default page instead of your app.
+
+      The first cut rewrote the header to the dev-domain name with
+      `--http-host-header`. It served the right project, but the app then
+      built every absolute URL *from that rewritten header* — so every link on
+      the page pointed at `<site>.phpforge.dev`, a name the phone cannot
+      reach. Found testing on a real phone: styles missing, `/admin` bouncing
+      back to the local domain.
+
+      Fixed by not rewriting anything. `forge tunnel` drops a symlink named
+      after the tunnel's own hostname under `.tunnel/` — a sibling of `sites/`,
+      not nested in it, so a project never has to be published there first —
+      and `resolve_docroot.lua` checks it before falling through to the usual
+      `sites/` lookup. Only names this command put there on purpose resolve;
+      nothing else can make an arbitrary bare host match. The app then sees
+      its own real `Host` on every request and builds links the phone can
+      open.
+
+      `forge tunnel [folder] [--php <v>]` resolves the same way `forge link`
+      does — an explicit path, an existing `sites/` shortcut kept working as a
+      convenience, or the directory you are standing in — so a project you
+      never ran `forge link` on can still be tunnelled. `--php` pins a version
+      for that one tunnel: the tunnel's hostname carries no `--pNN` suffix (it
+      is not ours to name), so the version goes in a same-named `.php` file
+      next to the `.tunnel/` alias instead, and `set_php_handler` reads it
+      when the host is not one of ours. Works the same in `forge tunnel add`.
+
+      That alone was not enough. Apache picks vhosts by "first one whose name
+      matches, in load order" (the note in `010-mail.conf` says so), and a
+      tunnel's hostname matches nothing — so it fell through to the mail
+      catcher's vhost, which loads first, and the Lua hook never ran at all.
+      `devlocal-common.conf` needed a bare `ServerAlias *` added alongside
+      `*.${DEV_DOMAIN}` to make the main vhost the catch-all instead.
+
+      **The port.** The obvious target is 80, and that is the trap. Over plain
+      HTTP the app sees no TLS and builds `http://` links inside an `https://`
+      page: the browser blocks them, or the redirects loop. The usual cure is
+      editing the app's trusted-proxy settings, which is not work a dev
+      environment should be asking for. `forge tunnel` goes to **443** instead,
+      so PHP gets `HTTPS=on` for real and nothing in the app changes. Measured on
+      the same page, same server, same request:
+
+      | | |
+      |---|---|
+      | via `http://apachedev:80` | 23 links, all `http://` |
+      | via `https://apachedev:443` | 23 links, all `https://` |
+
+      The self-signed certificate is skipped with `--no-tls-verify`, and no phone
+      ever sees it: the public TLS is Cloudflare's own. The HSTS that Chrome pins
+      on every `.dev` name never comes up either, since the browser visits
+      trycloudflare.com or your domain.
+
+      Two shapes, by whether credentials are handed over:
+
+      ```bash
+      forge tunnel                                  # throwaway URL, no account
+      forge tunnel login                            # your Cloudflare domain
+      forge tunnel add my-app my-app.tunnel.you.com
+      forge tunnel on                               # background, several sites
+      ```
+
+      **Two bugs found while replacing the script.** It named `apachedev`
+      outright, so it would have broken the day anyone turned the nginx profile
+      on — the command reads `is_on nginx` now. And its only precondition check
+      was that the compose **network** existed, which mailpit and dnsmasq keep
+      alive on their own: the check passed while there was nothing to tunnel to,
+      and the failure arrived later as a name-resolution error naming no cause.
+      It checks the web server itself now, via the `need_running` that was
+      already there.
+
+---
+
+- [x] **56. `forge tunnel` over nginx** — DONE
+
+      [55](#55) fixed the tunnel's `Host`-header bug for Apache only, and left
+      nginx (`docker-library/nginx/`, the `nginx` profile that *replaces*
+      apachedev) for later. Turned out smaller than it first looked: the
+      "non-Lua regex, gsub that doesn't reverse" bug once true of
+      `resolve_docroot.lua` was already fixed in an earlier commit
+      (`a5d8f5e`) — a stale claim in `CLAUDE.md`'s known-inconsistencies list,
+      corrected alongside this. What was actually still broken:
+
+      - The Lua's early `return` when a host is not under `DEV_DOMAIN` skipped
+        front-controller resolution entirely — harmless for "/", but every
+        other route 404'd, since nginx (unlike Apache) never reads
+        `.htaccess` on its own; the Lua *is* the only place that rule runs.
+        Restructured into if/elseif/else so a resolved tunnel docroot still
+        reaches the front-controller code below it.
+      - `site.conf.tpl`'s two server blocks only match `*.${DEV_DOMAIN}`, so a
+        tunnel's own hostname fell through to nginx's implicit default for an
+        unmatched name — whichever block is *first in the file*, Mailpit's.
+        Same failure shape as the Apache one in [55](#55). Fixed with two new
+        `default_server` blocks (80 and 443), no `server_name` needed.
+      - Added the same two lookups the Apache Lua has: a docroot alias at
+        `.tunnel/<host>` and a PHP-version fallback reading
+        `.tunnel/<host>.php`, for a host with no `--pNN` suffix.
+
+      Verified without ever stopping Apache or the live tunnel: ran `nginxdev`
+      standalone on alternate host ports (8080/8443), on the same network and
+      volumes as the real stack. Confirmed normal sites, the mail vhost,
+      `--pNN`, an unmatched `*.${DEV_DOMAIN}` host still 404ing (not Mailpit),
+      a tunnel alias serving an unpublished project, `--php` pinning
+      overriding the backend version, and — the actual regression this task
+      was about — a nested Laravel route (`/admin/login`, not just `/`)
+      resolving through the tunnel branch with links pointing at the tunnel's
+      own hostname, same as the direct-domain request.

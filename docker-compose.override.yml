@@ -113,6 +113,32 @@ services:
       - MP_SMTP_AUTH_ALLOW_INSECURE=1
     restart: unless-stopped
 
+  # A public URL for a site, so you can open it on a real phone. Two shapes,
+  # driven by `forge tunnel`: this one is the background half, which needs your
+  # Cloudflare credentials and gives hostnames that stay. The throwaway kind
+  # needs no account and no service -- it is a one-off `docker run`.
+  #
+  #   forge tunnel login && forge tunnel add <site> <hostname>
+  #   forge tunnel on
+  #
+  # config.yml is generated; the mapping it comes from lives next to it in
+  # ./custom/cloudflared/sites. Both are out of git, like the rest of custom/.
+  #
+  # ~/.cloudflared is mounted read-only on purpose: it holds the login
+  # certificate and the tunnel credentials, and nothing running unattended
+  # should be able to rewrite them. `forge tunnel login` and `add` mount it
+  # writable for the moment they need to.
+  cloudflared:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    hostname: ${USERNAME}-cloudflared
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ${HOME}/.cloudflared:/home/nonroot/.cloudflared:ro
+      - ./custom/cloudflared:/etc/cloudflared:ro
+    restart: unless-stopped
+
   es8143dev:
     profiles: ["search"]
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.2

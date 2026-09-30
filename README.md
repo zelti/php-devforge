@@ -96,6 +96,19 @@ for keeping many projects on one shared environment with no per-project setup.
 ## 🚀 Quick start
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/zelti/php-devforge/main/bootstrap.sh | bash
+forge start
+```
+
+Prefer not to pipe a script straight into `bash`? Download it, read it, then run it:
+```bash
+curl -fsSL https://raw.githubusercontent.com/zelti/php-devforge/main/bootstrap.sh -o bootstrap.sh
+less bootstrap.sh
+bash bootstrap.sh
+```
+
+Or clone it yourself:
+```bash
 git clone https://github.com/zelti/php-devforge.git
 cd php-devforge
 ./install.sh            # asks a few questions, sets everything up
@@ -153,6 +166,24 @@ Then open **https://welcome.phpforge.dev**.
     Check it works: `https://welcome.phpforge.dev` — the page reports what is
     actually running: the PHP version and web server answering, which other
     versions are installed, and which databases and mail are up.
+
+### 🔄 Updating
+
+```bash
+forge update
+```
+
+Moves this checkout to the latest release and reconciles `.env` against it —
+you'll see a yellow notice on any command once one is out. It lands you on that
+release exactly (a detached commit, not a branch), so everyone who updates ends
+up on the same code; `forge update --edge` tracks `main` instead, if you want that.
+Local changes to a tracked file (not `.env` or anything under `custom/`, which
+are yours and never touched) stop it rather than risk losing them —
+`forge update --stash` carries them through instead of git commands you'd have to
+run yourself.
+
+Docker images are versioned separately, on a floating tag that does not follow
+along automatically: `docker compose pull` if you want the latest one too.
 
 ### 🧹 Uninstalling
 
@@ -369,7 +400,7 @@ your DNS in a way that could break when the containers are down.
 ## ✏️ Customising Without Breaking Upgrades
 
 **Do not edit anything under `docker-library/`.** Those files change with every
-release, so your edits will conflict on `git pull` — and a copy kept aside is
+release, so your edits will conflict on `forge update` — and a copy kept aside is
 worse: it stops receiving fixes, silently. Use these instead. All three are
 ignored by git.
 

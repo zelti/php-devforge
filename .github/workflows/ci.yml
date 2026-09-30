@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck --severity=warning \
-            install.sh install_cert.sh setup-local-dns.sh aliases.bash \
+            install.sh bootstrap.sh install_cert.sh setup-local-dns.sh aliases.bash \
             lib/menu.sh lib/compose.sh lib/version.sh lib/skill.sh \
             .github/scripts/serve.sh \
             uninstall.sh bin/forge \
@@ -119,6 +119,28 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
+
+      # bootstrap.sh is a second entry point (curl | bash) on top of this same
+      # install.sh -- it clones fresh, or on a second run hands off to
+      # `forge update` instead of cloning again. Exercised against the real
+      # public remote, in a directory of its own, so it cannot interfere with
+      # this job's own .env-driven steps below.
+      - name: bootstrap.sh clones and installs non-interactively
+        run: |
+          set -euo pipefail
+          T="$(mktemp -d)"
+          D="$T/php-devforge-config"
+          ./bootstrap.sh --dir="$D" -y --skip-cert --skip-dns --skip-link --skip-skill
+          test -f "$D/.env" || { echo "no .env came out of the clone"; exit 1; }
+          grep -q '^DEV_DOMAIN=' "$D/.env"
+          echo "cloned, installed, .env written"
+
+          # Same directory, second time: same repo, so it must hand off to
+          # `forge update` instead of cloning over itself again.
+          out="$(./bootstrap.sh --dir="$D" 2>&1)"
+          grep -q "updating instead" <<<"$out" \
+            || { echo "$out"; echo "did not detect the existing clone"; exit 1; }
+          rm -rf "$T"
 
       # The installer used to offer databases it could not name: the list came from
       # `docker compose config --profiles`, which cannot parse the files before .env

@@ -1956,54 +1956,106 @@ reasoning about them.
       instead of the `curl` loop CI uses. At that point the check becomes
       infrastructure and has to be exact.
 
-- [ ] **53. `bootstrap.sh`: install with one line** 💬 DISCUSS FIRST — *designed, not
-      started. Discussed as "44" in conversation before that number went to the
-      welcome page.*
+- [x] **53. `bootstrap.sh`: install with one line** — DONE. *Discussed as "44"
+      in conversation before that number went to the welcome page.*
 
       ```bash
       curl -fsSL https://raw.githubusercontent.com/zelti/php-devforge/main/bootstrap.sh | bash
       ```
 
-      Roughly eighty lines that install nothing themselves: check that docker is
-      running and git is there, refuse to run under sudo, clone into
-      `~/php-devforge-config` (or `git pull` when it is already that repo), and
-      hand over to the installer everyone already has.
+      Installs nothing itself: checks docker is running and git is there,
+      refuses to run under sudo (with a specific fix -- join the `docker`
+      group -- not a generic warning), clones into `~/php-devforge-config`
+      (`--dir=`/`PHP_DEVFORGE_HOME` override it), and hands over to the
+      installer everyone already has.
 
-      **The one line with a trick in it**, and it was verified rather than
-      assumed:
+      **The one line with a trick in it**, verified rather than assumed:
 
       ```bash
       exec ./install.sh < /dev/tty
       ```
 
       Under `curl … | bash` standard input *is the pipe*, not the keyboard, so
-      `install.sh:68` correctly refuses to ask questions it cannot hear:
+      install.sh's own guard correctly refuses to ask questions it cannot
+      hear unless told otherwise. Guarded further once actually built: a
+      headless run (CI, a container with no controlling terminal at all) can
+      have a `/dev/tty` device node that passes `-r`/`-w` and still fails to
+      *open* with "No such device or address" -- caught testing this in CI's
+      own sandbox, of all places. The real test is attempting the open
+      (`( : </dev/tty ) 2>/dev/null`), not checking permission bits.
 
-      ```
-      $ cat install.sh | bash -s -- --domain=test.dev
-      [ERROR] No terminal to ask questions on. Use --yes (plus --skip-cert / --skip-dns).
-      ```
+      **It is a cover, not an engine.** The repository **is** the product --
+      the compose files, the Dockerfiles, the vhosts, the docroot Lua. Nobody
+      escapes the clone; the bootstrapper only performs it for them. Run a
+      second time against a directory that is already this repo, it does not
+      re-clone or reimplement `git pull` itself -- it hands off to
+      [`forge update`](#57), the one place that knows how to safely advance a
+      checkout.
 
-      The fix is to hand the terminal back, never to remove that guard --
-      otherwise the one-line install is a blind `--yes` or nothing.
+      What it costs, closed out rather than deferred again: a CI job pipes it
+      end to end twice (fresh clone, then the same directory again to prove
+      the hand-off), and the distrustful path -- download, read, then run --
+      is now in the README next to the one-liner.
 
-      **It is a cover, not an engine.** Claude Code's installer works because it
-      installs *itself*: one binary. Here the repository **is** the product -- the
-      compose files, the Dockerfiles, the vhosts, the docroot Lua. Nobody escapes
-      the clone; the bootstrapper only performs it for them.
+- [x] **57. `forge update`, and a yellow notice when one exists** — DONE
 
-      What it genuinely buys: it fails *before* cloning when docker is missing,
-      instead of after; it puts the checkout in one predictable place, which is
-      the failure mode behind task 40 (two copies fighting over the same
-      containers); and it is one line to paste into a README or a demo.
+      No update command existed; the only guidance was the README telling
+      people not to edit `docker-library/` because it "conflicts with `git
+      pull`" -- true, but nobody was ever told to run that, or protected from
+      it going wrong.
 
-      What it costs: a second entry point to maintain and cover in CI, and asking
-      people to pipe the internet into `bash` in a project that touches the system
-      trust store. That is answered by documenting the distrustful path --
-      `curl -o bootstrap.sh …`, read it, run it -- but that has to be written.
+      Considered and rejected: shipping updates as GitHub's auto-generated
+      release zip instead of git, to spare people needing `.git` at all. Ruled
+      out because `.git` has to persist for the *life* of the install, not
+      just at clone time -- `forge version`'s `git describe` suffix, the
+      tag/VERSION consistency check in CI, and this same task's own dirty-tree
+      detection all depend on it being a real checkout, always. A zip either
+      destroys that or has to reimplement, worse, what git already does for
+      free. The actual risk behind the idea -- someone running `git pull` by
+      hand and breaking their tree -- is what `forge update` solves by existing
+      at all: nobody types a git command themselves.
 
-      **Not a priority.** Worth doing the day the project is shown to other
-      people; for a single user who already has it cloned it changes nothing.
+      Lands on the newest **release tag**, detached, not on `main` HEAD --
+      `forge update --edge` opts into tracking `main` instead. Checked against
+      local git tags (`git fetch --tags` + `git tag -l 'v*' --sort=-v:refname`),
+      never GitHub's Releases API: releases require `gh` or an authenticated
+      API call, a dependency this has no other reason to add, and -- proven by
+      this repo's own state while writing this -- `v0.2.0`'s tag had no
+      matching Release object yet, so asking "what's the latest release"
+      would have wrongly said `v0.1.0`.
+
+      One real bug caught testing it: `git rev-parse HEAD` vs. `git rev-parse
+      "$target"` for an *annotated* tag never matched, because an annotated
+      tag's own object sha differs from the commit it points at -- so "already
+      on the latest release" never fired, and every run re-"updated" to where
+      it already was. Fixed by dereferencing (`"${target}^{commit}"`).
+
+      A dirty tracked file aborts by default, naming exactly what's dirty
+      (and, if it's under `docker-library/`, pointing at the README's own
+      warning); `--stash` is the one automated way through, never a forced
+      checkout. Verified end to end in an isolated clone: clean update, dirty
+      refusal, `--stash` round-tripping a real local edit through
+      `git stash`/`git checkout`/`git stash pop`, and `--edge` landing on
+      `main` instead.
+
+      The yellow notice (`forge`'s existing `warn()` style) is a background,
+      non-blocking `git ls-remote`-equivalent check -- actually a `git fetch
+      --tags` against the real checkout, reusing exactly what `forge update`
+      itself needs -- cached for 24h so no command ever waits on the network,
+      and silent outside a real terminal so a piped/scripted `forge` never
+      gets a stray line mixed into its output. Skipped for `update`,
+      `install`, and `uninstall`.
+
+      New: a small `release.yml` workflow, triggered only by a `v*` tag push,
+      runs `gh release create --generate-notes` -- closing the exact gap this
+      task found (`v0.2.0` tagged, unreleased) so the README's release badge
+      and "what's latest" never drift from the tags again.
+
+      Found while writing the image-axis nudge, not fixed here: `forge images
+      pull` only sets `IMAGE_MODE=missing` ("pull if absent") -- it does not
+      force a fresh pull of an image already present locally. The name
+      overpromises; `forge update` prints what actually happens instead of
+      trusting the command name to be accurate.
 
 - [x] **54. pnpm instead of nvm — measured, and not worth it** — DECIDED, NOT DOING
       Recorded because the idea is a reasonable one and the reason for dropping it

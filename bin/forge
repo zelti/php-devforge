@@ -25,6 +25,57 @@ info() { echo -e "${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
+# X.Y.Z, compared field by field. Not `sort -V`: GNU sort has it, the BSD sort
+# macOS ships does not, and this project cares about that (see cmd_link).
+version_lt() {
+    local i; local -a af bf
+    IFS=. read -r -a af <<<"$1"
+    IFS=. read -r -a bf <<<"$2"
+    for i in 0 1 2; do
+        local x="${af[i]:-0}" y="${bf[i]:-0}"
+        [ "$x" -lt "$y" ] && return 0
+        [ "$x" -gt "$y" ] && return 1
+    done
+    return 1
+}
+
+UPDATE_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/php-devforge/update-check"
+
+# A background, non-blocking peek at whether a newer release exists. The
+# network call (if any) never runs in the foreground -- this reads only
+# whatever the last background check already found, refreshed at most once a
+# day, so no command ever waits on it. Silent outside a real terminal, so a
+# piped/scripted `forge` never gets a stray line mixed into its output.
+check_for_update() {
+    local now cached_at="" cached_v=""
+    now="$(date +%s)"
+
+    if [ -f "$UPDATE_CACHE" ]; then
+        IFS=$'\t' read -r cached_at cached_v < "$UPDATE_CACHE" 2>/dev/null || true
+    fi
+
+    if [ -z "$cached_at" ] || [ "$((now - cached_at))" -gt 86400 ]; then
+        (
+            mkdir -p "$(dirname "$UPDATE_CACHE")" 2>/dev/null
+            latest="$(git -C "$FORGE_DIR" fetch origin --tags --quiet 2>/dev/null \
+                && git -C "$FORGE_DIR" tag -l 'v*' --sort=-v:refname 2>/dev/null | head -1)"
+            if printf '%s' "$latest" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+                tmp="$(mktemp "${UPDATE_CACHE}.XXXXXX" 2>/dev/null)" && {
+                    printf '%s\t%s\n' "$(date +%s)" "${latest#v}" > "$tmp"
+                    mv "$tmp" "$UPDATE_CACHE"
+                }
+            fi
+        ) >/dev/null 2>&1 &
+    fi
+
+    if [ -n "$cached_v" ] && [ -t 1 ]; then
+        local current; current="$(cat "$FORGE_DIR/VERSION" 2>/dev/null || echo 0.0.0)"
+        version_lt "$current" "$cached_v" \
+            && warn "A new version is available: v${cached_v} (you have ${current}). Run: forge update"
+    fi
+    return 0
+}
+
 # Accepts 8.5 or 85; returns the compact form.
 normalise() {
     local v="${1//./}"
@@ -305,6 +356,84 @@ cmd_install() { ./install.sh "$@"; }
 # Delegated for the same reason as install: the script has to keep working
 # after this command's own symlink is gone.
 cmd_uninstall() { ./uninstall.sh "$@"; }
+
+# Lands on a release tag, not a moving branch: everybody who updates ends up
+# on the same commit, and `forge version` (git describe) is built to report a
+# bare tag cleanly. --edge is the escape hatch for whoever wants main instead.
+cmd_update() {
+    local edge=0 do_stash=0 arg
+    for arg in "$@"; do
+        case "$arg" in
+            --edge)  edge=1 ;;
+            --stash) do_stash=1 ;;
+            *) err "usage: forge update [--edge] [--stash]"; exit 1 ;;
+        esac
+    done
+
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+        err "Not a git checkout -- nothing to update."
+        exit 1
+    }
+
+    info "Checking for updates"
+    git fetch origin --tags --quiet
+
+    # Untracked files are not this check's business -- .env, custom/, and the
+    # rest are already gitignored for exactly this reason. A tracked file the
+    # user edited directly is the one case worth stopping for.
+    local dirty; dirty="$(git status --porcelain --untracked-files=no)"
+    if [ -n "$dirty" ]; then
+        if [ "$do_stash" -eq 1 ]; then
+            warn "Stashing local changes"
+            git stash push -m "forge update autostash" >/dev/null
+        else
+            err "You have local changes -- refusing to update over them."
+            echo "$dirty" | sed 's/^/  /' >&2
+            if grep -q 'docker-library/' <<<"$dirty"; then
+                echo "  docker-library/ changes with every release -- see the README's" >&2
+                echo "  note on customising without breaking upgrades." >&2
+            fi
+            echo "  Stash them and update anyway:  forge update --stash" >&2
+            exit 1
+        fi
+    fi
+
+    if [ "$edge" -eq 1 ]; then
+        git checkout main --quiet
+        git pull --ff-only origin main
+        info "On main: $(forge_version)"
+    else
+        local target
+        target="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+        [ -n "$target" ] || { err "No release tags found."; exit 1; }
+
+        # ^{commit}: an annotated tag's own sha differs from the commit it
+        # points at, so comparing rev-parse output raw never matched, and
+        # forge update re-"updated" to where it already was, every time.
+        if [ "$(git rev-parse HEAD)" = "$(git rev-parse "${target}^{commit}")" ]; then
+            info "Already on the latest release: $target"
+        else
+            git checkout "$target" --quiet
+            info "Updated to $target"
+            warn "You're on a specific release now, not a branch -- that's expected."
+            echo "      forge update --edge tracks main instead, if you want that."
+        fi
+    fi
+
+    if [ "$do_stash" -eq 1 ] && [ -n "$dirty" ]; then
+        warn "Restoring your local changes"
+        git stash pop || warn "Could not reapply automatically -- see: git stash list"
+    fi
+
+    if [ -f .env ]; then
+        info "Reconciling .env"
+        ./install.sh -y
+    fi
+
+    echo ""
+    echo "  Docker images use a floating ':dev' tag and are not refreshed by this."
+    echo "  Force one:  docker compose pull   (or set IMAGE_MODE=always in .env)"
+}
 
 # Optional services are compose profiles listed in COMPOSE_PROFILES, so `forge
 # profile` just edits that line. Nothing here enumerates them: the list comes
@@ -980,6 +1109,7 @@ PHP DevForge $(forge_version)
 
   forge install [options]      set everything up (first run, or to reconfigure)
   forge uninstall [--dry-run]  undo it: containers, images, DNS, the trusted CA
+  forge update [--edge]        move this checkout to the latest release
 
   forge start [service...]     start the environment
   forge stop  [service...]     stop it
@@ -1019,8 +1149,14 @@ FORCE=0
 if [ "${1:-}" = "--force" ]; then FORCE=1; shift; fi
 
 case "${1:-help}" in
+    install|uninstall|update) ;;
+    *) check_for_update ;;
+esac
+
+case "${1:-help}" in
     install)   shift; cmd_install "$@" ;;
     uninstall) shift; cmd_uninstall "$@" ;;
+    update)    shift; cmd_update "$@" ;;
     start)   shift; cmd_start "$@" ;;
     stop)    shift; cmd_stop "$@" ;;
     restart) shift; cmd_restart "$@" ;;

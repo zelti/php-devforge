@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PHP DevForge is **infrastructure, not an application**: a Docker Compose stack (Apache + PHP-FPM 8.3/8.4 + dnsmasq + Postgres) that serves any PHP project dropped into `/home/php-devforge/public_html` under an auto-generated wildcard HTTPS domain. There is no PHP application code, no test suite, and no build system here — only Dockerfiles, server config, Lua scripts, and shell installers.
 
-The repo is intended to be cloned to `$HOME/php-devforge-config` (the aliases in `aliases.bash` hardcode that path).
+Nothing hardcodes where the repo lives — `aliases.bash` resolves its own location dynamically via `BASH_SOURCE`, and `bin/forge` does the same via `$0`. `$HOME/php-devforge-config` is only `bootstrap.sh`'s *default* clone target for the one-line install (`--dir=`/`PHP_DEVFORGE_HOME` override it); a manual `git clone` can go anywhere.
 
 ## Commands
 

@@ -1,0 +1,26 @@
+name: Release
+
+# Only from a version tag, so pushing to a branch never creates one by accident.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (only needed for a manual re-run)"
+        required: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # GITHUB_TOKEN is enough; no secrets to manage, same as publish.yml.
+      - name: create the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: gh release create "$TAG" --title "PHP DevForge ${TAG#v}" --generate-notes

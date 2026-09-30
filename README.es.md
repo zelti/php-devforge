@@ -96,6 +96,19 @@ pensado para tener muchos proyectos sobre un mismo entorno, sin configurar ningu
 ## 🚀 Instalación rápida
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/zelti/php-devforge/main/bootstrap.sh | bash
+forge start
+```
+
+¿Prefieres no mandar un script directo a `bash`? Descárgalo, léelo, y después córrelo:
+```bash
+curl -fsSL https://raw.githubusercontent.com/zelti/php-devforge/main/bootstrap.sh -o bootstrap.sh
+less bootstrap.sh
+bash bootstrap.sh
+```
+
+O clónalo tú mismo:
+```bash
 git clone https://github.com/zelti/php-devforge.git
 cd php-devforge
 ./install.sh            # hace unas preguntas y deja todo listo
@@ -154,6 +167,25 @@ Y abre **https://welcome.phpforge.dev**.
    Comprueba que funciona: `https://welcome.phpforge.dev` — la página informa de
    lo que hay corriendo de verdad: la versión de PHP y el servidor que responden,
    qué otras versiones tienes instaladas y qué bases de datos y correo están arriba.
+
+### 🔄 Actualizar
+
+```bash
+forge update
+```
+
+Mueve este checkout al último release y reconcilia `.env` contra él — en cuanto
+haya uno nuevo, verás un aviso amarillo en cualquier comando. Te deja exactamente
+en ese release (un commit suelto, no una rama), así que todo el que actualiza
+termina en el mismo código; `forge update --edge` sigue `main` en cambio, si
+prefieres eso. Un cambio local en un archivo rastreado (no `.env` ni nada dentro
+de `custom/`, que son tuyos y nunca se tocan) lo detiene en vez de arriesgarse a
+perderlo — `forge update --stash` lo lleva consigo, sin que tengas que escribir
+comandos de git tú mismo.
+
+Las imágenes de Docker se versionan aparte, con una etiqueta flotante que no
+las sigue automáticamente: `docker compose pull` si también quieres la más
+reciente.
 
 ### 🧹 Desinstalar
 
@@ -366,7 +398,7 @@ tu DNS de una forma que podría romperse con los contenedores apagados.
 ## ✏️ Personalizar sin romper las actualizaciones
 
 **No edites nada dentro de `docker-library/`.** Esos archivos cambian con cada versión,
-así que tus cambios darán conflictos al hacer `git pull` — y una copia aparte es peor:
+así que tus cambios darán conflictos al hacer `forge update` — y una copia aparte es peor:
 deja de recibir arreglos, en silencio. Usa esto. Los tres están fuera de git.
 
 **Ajustes de PHP — sin reconstruir.** Deja un archivo en `custom/php.d/`:

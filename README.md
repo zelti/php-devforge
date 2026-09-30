@@ -733,11 +733,11 @@ $ forge version
 PHP DevForge 0.1.0 (c45e1f3)
 ```
 
-To cut one: bump `VERSION`, commit, then tag it.
-
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
+To cut one: bump `VERSION` and merge it to `main`. That's the whole step —
+tagging and the GitHub Release both happen on their own from there:
+a `VERSION` change landing on `main` gets tagged automatically
+(`.github/workflows/tag-on-version-bump.yml`), and that tag push creates the
+Release (`.github/workflows/release.yml`, `gh release create --generate-notes`).
 
 CI refuses a `VERSION` that is not semver, and a tagged commit whose tag and
 `VERSION` disagree — so the two cannot drift.

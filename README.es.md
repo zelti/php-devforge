@@ -726,11 +726,11 @@ $ forge version
 PHP DevForge 0.1.0 (c45e1f3)
 ```
 
-Para publicar una: sube el número en `VERSION`, haz commit y etiqueta.
-
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
+Para publicar una: sube el número en `VERSION` y mergea a `main`. Eso es todo —
+el tag y el Release de GitHub pasan solos desde ahí: un cambio en `VERSION` que
+llega a `main` se etiqueta automáticamente
+(`.github/workflows/tag-on-version-bump.yml`), y ese tag crea el Release
+(`.github/workflows/release.yml`, `gh release create --generate-notes`).
 
 La CI rechaza un `VERSION` que no sea semver, y un commit etiquetado cuya etiqueta y
 `VERSION` no coincidan — así no pueden separarse.

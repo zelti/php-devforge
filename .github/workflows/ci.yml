@@ -136,8 +136,12 @@ jobs:
           echo "cloned, installed, .env written"
 
           # Same directory, second time: same repo, so it must hand off to
-          # `forge update` instead of cloning over itself again.
-          out="$(./bootstrap.sh --dir="$D" 2>&1)"
+          # `forge update` instead of cloning over itself again. The hand-off
+          # itself can fail here -- this clones real `main`, which has no
+          # `forge update` before this very change merges into it -- so the
+          # capture is `|| true`'d: it is the printed line, not the exit
+          # code, that this step is checking.
+          out="$(./bootstrap.sh --dir="$D" 2>&1)" || true
           grep -q "updating instead" <<<"$out" \
             || { echo "$out"; echo "did not detect the existing clone"; exit 1; }
           rm -rf "$T"

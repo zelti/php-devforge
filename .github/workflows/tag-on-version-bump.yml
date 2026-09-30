@@ -1,0 +1,41 @@
+name: Tag a version bump
+
+# Only a VERSION change on main, so this never creates a tag on its own
+# initiative -- a version bump is the one signal that means "this is a
+# release." Tagging is kept separate from release.yml (which reacts to any
+# v* tag, however it got there) rather than folded into one step, so a tag
+# created by hand still gets released the same way.
+on:
+  push:
+    branches: [main]
+    paths: ["VERSION"]
+  workflow_dispatch:
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # GITHUB_TOKEN is enough; no secrets to manage, same as release.yml.
+      - name: tag the version in VERSION, if it is new
+        run: |
+          v="$(cat VERSION)"
+          echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "VERSION is not semver: '$v'"; exit 1; }
+          tag="v$v"
+
+          # Checked against the remote, not a local `git tag -l`: checkout's
+          # default fetch-tags=false means the local list would always come
+          # back empty here regardless of what actually exists.
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "$tag already exists -- nothing to do"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "PHP DevForge $v"
+          git push origin "$tag"

@@ -2057,6 +2057,34 @@ reasoning about them.
       overpromises; `forge update` prints what actually happens instead of
       trusting the command name to be accurate.
 
+- [x] **58. Tagging a release was still a manual step** — DONE
+
+      [57](#57) closed the gap between a tag and its GitHub Release, but a tag
+      itself still had to be created and pushed by hand every time -- exactly
+      the two-command dance that produced `v0.2.0`'s tag without a Release in
+      the first place, until [57](#57) fixed that half.
+
+      `tag-on-version-bump.yml` fires only on a `VERSION` change landing on
+      `main` -- not on every push, and not something it decides by inspecting
+      commits, since a version bump in that one file is already the explicit
+      signal that this commit is a release. Reads `VERSION`, checks
+      `refs/tags/vX.Y.Z` against the *remote* (checkout's default
+      `fetch-tags: false` means a local `git tag -l` would always come back
+      empty here, tag present or not), and pushes the tag only if it is
+      genuinely new.
+
+      Kept as its own workflow rather than folded into `release.yml`: tagging
+      and releasing are two different questions ("is this commit a release"
+      vs. "does every tag get a GitHub Release"), and keeping them separate
+      means a tag pushed by hand -- a hotfix, say -- still gets released the
+      normal way without this workflow needing to know why it exists.
+
+      End to end, from one line changed in `VERSION` on `main`:
+      commit lands → this workflow tags it → the tag push fires
+      [57](#57)'s workflow → the GitHub Release appears. Bumping the version is
+      now an ordinary PR; nothing about shipping a release is a command
+      anyone has to remember to run by hand again.
+
 - [x] **54. pnpm instead of nvm — measured, and not worth it** — DECIDED, NOT DOING
       Recorded because the idea is a reasonable one and the reason for dropping it
       is not obvious. Without this note the measurement gets repeated in six

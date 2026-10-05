@@ -739,6 +739,11 @@ a `VERSION` change landing on `main` gets tagged automatically
 (`.github/workflows/tag-on-version-bump.yml`), and that tag push creates the
 Release (`.github/workflows/release.yml`, `gh release create --generate-notes`).
 
+The notes group themselves by label (`.github/release.yml`): `enhancement`,
+`bug`, `documentation` — the same labels the repo ships with. One label per
+PR, matching whichever commit prefix it already uses (`feat:`/`fix:`/`docs:`);
+a fix found while building a feature stays part of that PR, not a second label.
+
 CI refuses a `VERSION` that is not semver, and a tagged commit whose tag and
 `VERSION` disagree — so the two cannot drift.
 

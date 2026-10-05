@@ -1,0 +1,18 @@
+# Groups gh release create --generate-notes by label, instead of one flat
+# list. Not a workflow -- this file is only read when notes are generated,
+# by release.yml (.github/workflows/release.yml).
+#
+# Uses the labels the repo already ships with (bug, enhancement,
+# documentation) rather than inventing new ones. One label per PR, matching
+# the same prefix the commit messages already use (feat:/fix:/docs:) -- a fix
+# found while building a feature stays part of that PR, not a second label.
+changelog:
+  categories:
+    - title: 🚀 Features
+      labels: [enhancement]
+    - title: 🐛 Fixes
+      labels: [bug]
+    - title: 📝 Docs
+      labels: [documentation]
+    - title: Other changes
+      labels: ["*"]

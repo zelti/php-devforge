@@ -742,6 +742,12 @@ Release (`.github/workflows/release.yml`, `gh release create --generate-notes`).
 CI refuses a `VERSION` that is not semver, and a tagged commit whose tag and
 `VERSION` disagree — so the two cannot drift.
 
+**Prereleases** work the same way — `VERSION=0.3.0-beta.1` tags and releases
+itself identically, except the Release is marked a GitHub prerelease, so it
+never shows up as "latest" (on the badge above, or to `forge update`, which
+skips any tag with a `-` suffix when picking the newest one). `forge update
+--edge` tracks `main` regardless, prerelease or not.
+
 ### Running a CI step before you push
 
 A round trip through GitHub is six minutes, and most failures are not in the code

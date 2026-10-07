@@ -2085,6 +2085,49 @@ reasoning about them.
       now an ordinary PR; nothing about shipping a release is a command
       anyone has to remember to run by hand again.
 
+- [x] **59. Prerelease versions (`0.3.0-beta.1`)** — DONE
+
+      Raised discussing [57](#57)/[58](#58): what happens to a beta? Checked
+      rather than assumed, with real tags in a throwaway repo --
+      `git tag --sort=-v:refname` ranks a prerelease **above** the release it
+      precedes (`v0.3.0-rc.1`, `v0.3.0-beta.2`, `v0.3.0-beta.1`, *then*
+      `v0.3.0`). Left alone, that is backwards in exactly the place it
+      matters: `forge update` picking "the newest tag" would have hard-coded
+      an unasked-for beta ahead of the real release the moment one existed.
+
+      Also considered and set aside: having `forge update` ask GitHub's
+      Releases API instead of tags, since `/releases/latest` already excludes
+      prereleases for free. Rejected for the same reason tags were chosen
+      over Releases in [57](#57) -- the Release is created by a *separate*
+      workflow, after the tag, and during however long that takes a Release
+      can be asked for and not yet exist. A tag is the primal fact; a Release
+      is a derived one that can lag or, if that workflow ever fails, never
+      arrive at all. `v0.2.0` sat tagged-but-unreleased for exactly this
+      reason until [57](#57) existed.
+
+      The actual fix is smaller than either alternative: filter out any tag
+      with a `-` suffix **before** `head -1`, not after. A prerelease tag
+      always has one (`X.Y.Z-anything`); a real release tag never does, so
+      once filtered what is left is plain `vX.Y.Z` tags, which git's sort
+      handles correctly on its own (confirmed: `v0.10.0` sorts above `v0.9.0`
+      once there is nothing else to confuse it). Applied in the two places
+      that pick "the newest tag" -- `forge update` itself, and the background
+      check behind the yellow notice.
+
+      `VERSION`'s regex (both in CI and in [58](#58)'s tagging workflow) grew
+      an optional `-[0-9A-Za-z.]+` suffix to allow this at all; `release.yml`
+      passes `--prerelease` to `gh release create` the moment a tag's name
+      has a hyphen in it, which is the one piece of this GitHub's own "latest
+      release" semantics handle without any help -- a prerelease, once marked,
+      is never "latest" on the badge or to anyone asking.
+
+      `forge update --edge` is unaffected either way: it tracks `main`
+      directly and was never choosing between tags to begin with. No
+      `forge update --pre` ("give me the beta on purpose") yet -- that would
+      need comparing a *mixed* list of stable and prerelease tags correctly,
+      which git's sort still cannot do, so it is real work and was not asked
+      for; this is just filtering betas out, not letting anyone opt in.
+
 - [x] **54. pnpm instead of nvm — measured, and not worth it** — DECIDED, NOT DOING
       Recorded because the idea is a reasonable one and the reason for dropping it
       is not obvious. Without this note the measurement gets repeated in six

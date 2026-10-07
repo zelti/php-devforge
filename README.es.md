@@ -735,6 +735,12 @@ llega a `main` se etiqueta automáticamente
 La CI rechaza un `VERSION` que no sea semver, y un commit etiquetado cuya etiqueta y
 `VERSION` no coincidan — así no pueden separarse.
 
+**Las prerelease funcionan igual** — `VERSION=0.3.0-beta.1` se etiqueta y se
+publica exactamente igual, solo que el Release queda marcado como prerelease
+en GitHub, así que nunca aparece como "latest" (ni en el badge de arriba, ni
+para `forge update`, que ignora cualquier tag con sufijo `-` al elegir el más
+nuevo). `forge update --edge` sigue `main` igual, sea prerelease o no.
+
 ### Ejecutar un paso de la CI antes de subir
 
 Una vuelta por GitHub son seis minutos, y la mayoría de los fallos no están en el

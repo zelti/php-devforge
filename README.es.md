@@ -732,6 +732,12 @@ llega a `main` se etiqueta automáticamente
 (`.github/workflows/tag-on-version-bump.yml`), y ese tag crea el Release
 (`.github/workflows/release.yml`, `gh release create --generate-notes`).
 
+Las notas se agrupan solas por etiqueta (`.github/release.yml`): `enhancement`,
+`bug`, `documentation` — las mismas que el repo ya trae. Una etiqueta por PR,
+la que coincida con el prefijo que ya usa su commit (`feat:`/`fix:`/`docs:`);
+un fix que encontraste mientras construías algo nuevo se queda contado en ese
+mismo PR, no en una segunda etiqueta.
+
 La CI rechaza un `VERSION` que no sea semver, y un commit etiquetado cuya etiqueta y
 `VERSION` no coincidan — así no pueden separarse.
 

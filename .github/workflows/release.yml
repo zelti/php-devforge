@@ -23,4 +23,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: gh release create "$TAG" --title "PHP DevForge ${TAG#v}" --generate-notes
+        run: |
+          flags=()
+          # A prerelease tag (v0.3.0-beta.1) always has a hyphen after the
+          # numbers; a real release tag never does. Marked as such so GitHub
+          # never counts it as "latest" -- that is GitHub's own distinction,
+          # not something this has to simulate.
+          case "$TAG" in
+            v*-*) flags+=(--prerelease) ;;
+          esac
+          gh release create "$TAG" --title "PHP DevForge ${TAG#v}" --generate-notes "${flags[@]}"

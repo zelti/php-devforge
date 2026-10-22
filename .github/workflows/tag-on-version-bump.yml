@@ -23,7 +23,8 @@ jobs:
       - name: tag the version in VERSION, if it is new
         run: |
           v="$(cat VERSION)"
-          echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+          # The -beta.1/-rc.1 suffix is optional: a prerelease is still semver.
+          echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || {
             echo "VERSION is not semver: '$v'"; exit 1; }
           tag="v$v"
 

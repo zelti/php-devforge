@@ -57,8 +57,14 @@ check_for_update() {
     if [ -z "$cached_at" ] || [ "$((now - cached_at))" -gt 86400 ]; then
         (
             mkdir -p "$(dirname "$UPDATE_CACHE")" 2>/dev/null
+            # Prerelease tags (v0.3.0-beta.1) are filtered before head -1, not
+            # after: git's version sort ranks them ABOVE the real release they
+            # precede, so without this, a real v0.3.0 sitting right there in
+            # the list would never even be considered the moment a beta tag
+            # existed at all.
             latest="$(git -C "$FORGE_DIR" fetch origin --tags --quiet 2>/dev/null \
-                && git -C "$FORGE_DIR" tag -l 'v*' --sort=-v:refname 2>/dev/null | head -1)"
+                && git -C "$FORGE_DIR" tag -l 'v*' --sort=-v:refname 2>/dev/null \
+                | grep -vE -- '-' | head -1)"
             if printf '%s' "$latest" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
                 tmp="$(mktemp "${UPDATE_CACHE}.XXXXXX" 2>/dev/null)" && {
                     printf '%s\t%s\n' "$(date +%s)" "${latest#v}" > "$tmp"
@@ -404,7 +410,12 @@ cmd_update() {
         info "On main: $(forge_version)"
     else
         local target
-        target="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+        # Prerelease tags (v0.3.0-beta.1) are filtered before head -1, not
+        # after: git's version sort ranks them ABOVE the real release they
+        # precede, so plain `forge update` would otherwise land someone on a
+        # beta they never asked for. --edge, above, does not go through this
+        # at all -- it tracks main regardless.
+        target="$(git tag -l 'v*' --sort=-v:refname | grep -vE -- '-' | head -1)"
         [ -n "$target" ] || { err "No release tags found."; exit 1; }
 
         # ^{commit}: an annotated tag's own sha differs from the commit it

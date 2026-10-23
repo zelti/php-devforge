@@ -2352,3 +2352,46 @@ reasoning about them.
       watches for a security release in the upstream image the way, say,
       Dependabot would for a pinned dependency. Not fixed here: raised as its
       own question, not bundled into this one incident's response.
+
+---
+
+- [x] **61. `forge tunnel --allowed-mail`** — DONE
+
+      Reported by the user: Cloudflare added a way to gate a tunnel's link
+      behind a login. Checked rather than assumed what that actually is --
+      not username/password, which cloudflared has never offered here.
+      "Protected Quick Tunnels" (`cloudflared` 2026.9.3): a visitor types an
+      allowed email, gets a one-time PIN from Cloudflare, and the app behind
+      the tunnel never sees any of it. One flag, `--allowed-mail`, repeatable
+      for more than one address, or a whole domain with `*@example.com`.
+
+      **Quick mode only, by design, not by oversight.** The named/hostname
+      mode's equivalent is a full Cloudflare Access policy -- configured on
+      Cloudflare's own dashboard, a materially heavier thing `forge` does not
+      manage any part of today (it only writes `config.yml`'s `ingress`
+      block). Mixing the two would have meant pretending a one-flag feature
+      and a whole separate product are the same shape.
+
+      One landmine checked and ruled out before trusting this: a quick
+      tunnel refuses to start at all if the container can see a `config.yml`
+      under `~/.cloudflared` left over from ever setting up a named tunnel on
+      that machine. `tunnel_quick()`'s `docker run` mounts nothing there --
+      confirmed by reading it, not assumed -- so this never applies to
+      `forge tunnel`'s containers regardless of whether `forge tunnel add`
+      has ever been used on the same machine.
+
+      `--allowed-mail` is passed straight through, unvalidated on this side:
+      cloudflared already rejects a malformed address or pattern on its own,
+      so duplicating that here would only be a second copy of its own
+      validation that could disagree with it. The "this puts `<name>` on the
+      public internet, with nothing guarding it" warning only fires when no
+      address was given; with one, it instead lists exactly who gets in, so
+      the screen confirms the filter landed rather than just going quiet
+      about the usual warning.
+
+      One real bug caught testing the message in isolation, not the tunnel
+      itself (never run for real while developing this -- it would publish
+      whatever test project to the internet): `"${array[*]}"` joins only on
+      the *first character* of `$IFS`, so `IFS=', '` silently dropped the
+      space and printed `a@b.com,c@d.com`. Fixed by joining on a plain `,`
+      and widening it by hand (`${joined//,/, }`) afterward.

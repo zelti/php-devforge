@@ -649,6 +649,13 @@ cmd_link() {
 # verify it, and no phone ever sees it, because the public TLS is Cloudflare's
 # own. The HSTS that Chrome pins on every .dev name never comes up either, since
 # the browser is visiting trycloudflare.com or your domain, not .phpforge.dev.
+#
+# --allowed-mail (quick mode only -- the named mode's equivalent is a full
+# Cloudflare Access policy, a dashboard thing this does not manage) is a
+# straight pass-through to cloudflared itself, added in 2026.9.3: a visitor
+# types that email, gets a one-time PIN from Cloudflare, and the app never
+# sees any of it. Nothing of ours to validate -- cloudflared rejects a bad
+# address or pattern on its own.
 TUNNEL_NAME="php-devforge"
 TUNNEL_DIR="custom/cloudflared"
 TUNNEL_CONFIG="$TUNNEL_DIR/config.yml"
@@ -833,14 +840,22 @@ tunnel_clean() {
 
 # Anonymous. Nothing is created, nothing is stored, and it dies with the window.
 tunnel_quick() {
-    local arg="" ver="" abs name root relpath sni web public_host=""
+    local arg="" ver="" abs name root relpath sni web public_host="" m joined
+    local -a allowed_mail=() mail_flags=()
     while [ $# -gt 0 ]; do
         case "$1" in
             --php) ver="${2:-}"; shift 2 ;;
+            --allowed-mail) allowed_mail+=("${2:-}"); shift 2 ;;
             *) arg="$1"; shift ;;
         esac
     done
     [ -n "$ver" ] && ver="$(tunnel_require_installed "$ver")"
+    # Passed straight through to cloudflared, one --allowed-mail per address
+    # or domain wildcard (*@example.com) -- it validates these itself, so
+    # there is nothing of ours to check first.
+    for m in "${allowed_mail[@]+"${allowed_mail[@]}"}"; do
+        mail_flags+=(--allowed-mail "$m")
+    done
 
     abs="$(tunnel_target "$arg")"
     name="$(tunnel_name "$abs")"
@@ -859,7 +874,17 @@ tunnel_quick() {
     tunnel_clean
     trap tunnel_clean EXIT INT TERM
 
-    warn "This puts ${name} on the public internet, with nothing guarding it."
+    if [ "${#allowed_mail[@]}" -gt 0 ]; then
+        # "${array[*]}" joins on only the FIRST character of IFS, so a
+        # two-char IFS here would silently drop the space -- joined on ","
+        # instead and widened by hand.
+        joined="$(IFS=,; echo "${allowed_mail[*]}")"
+        info "Only letting in: ${joined//,/, }"
+        echo "  A visitor enters that email, then a one-time PIN Cloudflare sends it --"
+        echo "  your app never sees the login. Needs cloudflared 2026.9.3 or newer."
+    else
+        warn "This puts ${name} on the public internet, with nothing guarding it."
+    fi
     echo "  It lasts as long as this window. Ctrl+C closes it."
     echo ""
     info "Tunnelling https://${web}:443"
@@ -878,7 +903,7 @@ tunnel_quick() {
         "$TUNNEL_IMAGE" \
         tunnel --url "https://${web}:443" \
                --origin-server-name "$sni" \
-               --no-tls-verify 2>&1 | while IFS= read -r line; do
+               --no-tls-verify "${mail_flags[@]+"${mail_flags[@]}"}" 2>&1 | while IFS= read -r line; do
         echo "$line"
         if [ -z "$public_host" ]; then
             # grep exits 1 on every line that is not the one with the URL --
@@ -1055,6 +1080,9 @@ cmd_tunnel() {
         -h|--help)
                 echo "  forge tunnel [folder] [--php <v>]      a throwaway public URL, no account needed"
                 echo "                                         (no folder: uses where you are standing)"
+                echo "  forge tunnel [folder] --allowed-mail <addr>"
+                echo "                                         only that email (or *@domain) gets in,"
+                echo "                                         repeat the flag for more than one"
                 echo "  forge tunnel login                     hand over your Cloudflare credentials"
                 echo "  forge tunnel add <folder> [host] [--php <v>]"
                 echo "                                         publish at a hostname that stays"

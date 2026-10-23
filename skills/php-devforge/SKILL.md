@@ -96,11 +96,19 @@ forge tunnel                    # standing inside the project, uses this folder
 forge tunnel ~/code/my-app/public   # or an explicit path, like forge link
 forge tunnel my-app              # or an existing sites/ shortcut, if you have one
 forge tunnel my-app --php 8.3    # pin a PHP version for this tunnel only
+forge tunnel my-app --allowed-mail you@example.com   # only that address gets in
+forge tunnel my-app --allowed-mail '*@example.com'   # or a whole domain
 ```
 
 Never requires `forge link` first — a project you have not published under
 `sites/` can be tunnelled directly. A throwaway `*.trycloudflare.com` URL, in
 the foreground, gone when you close the window. No account and no credentials.
+
+`--allowed-mail` (repeat it for more than one address) is a straight
+pass-through to cloudflared's own flag, added in 2026.9.3: a visitor types
+that email, gets a one-time PIN from Cloudflare, and your app never sees any
+of it. Without it the URL is open to anyone who has it, which `forge tunnel`
+says plainly on the way up.
 
 Over your own Cloudflare domain instead, for hostnames that stay and several
 sites at once:

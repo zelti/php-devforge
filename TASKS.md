@@ -2294,7 +2294,7 @@ reasoning about them.
 ---
 
 - [x] **60. CVE-2026-109618 / CVE-2026-109619 — the "PHP2Shell" release** —
-      DOCUMENTED, THIS MACHINE REBUILT, PUBLISHED IMAGES STILL PENDING
+      DONE: THIS MACHINE AND THE PUBLISHED IMAGES ARE BOTH REBUILT
 
       PHP's security team shipped an emergency release on 21 October 2026 for
       two core vulnerabilities, both CVSSv4 9.2, unauthenticated RCE:
@@ -2329,15 +2329,21 @@ reasoning about them.
       with the stack still serving (checked against a real site through
       `nginxdev`, which is what this machine runs instead of Apache).
 
-      Still open, and bigger than this one machine: `publish.yml` needs a
-      `workflow_dispatch` run (no Dockerfile change required) so
-      `ghcr.io/zelti/php-devforge/php:8.{3,4,5}-dev` republish against the
-      patched base for everyone else. Until that runs, anyone on
-      `IMAGE_MODE=missing` stays on the vulnerable image indefinitely --
-      that mode pulls only if the tag is **absent locally**, so an
-      already-pulled machine never notices a newer one exists on its own;
-      `IMAGE_MODE=always` or a manual `docker compose pull` is the only way
-      an existing install would get it before that republish happens anyway.
+      Bigger than this one machine: `ghcr.io/zelti/php-devforge/php:8.{3,4,5}-dev`
+      are what everyone else pulls, and those stayed on the vulnerable base
+      independently of anything rebuilt here. Triggered `publish.yml` by hand
+      (`workflow_dispatch` against `main`, no Dockerfile change needed, so it
+      did not have to wait on this task's own PR landing first) and confirmed
+      the republished images directly -- pulled all three fresh and ran
+      `php -v` inside each: 8.3.36/8.4.27/8.5.12, matching this machine.
+
+      Does not reach anyone already on `IMAGE_MODE=missing` who had already
+      pulled the old image before this ran: that mode only pulls when a tag
+      is **absent locally**, so an already-pulled machine never notices a
+      newer one exists on its own. `IMAGE_MODE=always` or a manual
+      `docker compose pull` is the only way an existing install picks this up
+      — worth knowing for next time, not something this incident's response
+      could reach retroactively.
 
       Worth remembering past this one incident: a floating base tag means
       "rebuild" is always enough and never needs a Dockerfile edit, but it

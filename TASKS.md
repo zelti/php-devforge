@@ -2290,3 +2290,59 @@ reasoning about them.
       was about — a nested Laravel route (`/admin/login`, not just `/`)
       resolving through the tunnel branch with links pointing at the tunnel's
       own hostname, same as the direct-domain request.
+
+---
+
+- [x] **60. CVE-2026-109618 / CVE-2026-109619 — the "PHP2Shell" release** —
+      DOCUMENTED, THIS MACHINE REBUILT, PUBLISHED IMAGES STILL PENDING
+
+      PHP's security team shipped an emergency release on 21 October 2026 for
+      two core vulnerabilities, both CVSSv4 9.2, unauthenticated RCE:
+      out-of-memory corruption (`-109618`) and a use-after-free from state
+      retained between requests (`-109619`). PHP's own advisory names
+      PHP-FPM among the highest-risk configurations — which is exactly what
+      every `phpNNdev` container here runs, reached through
+      `proxy:fcgi://phpNNdev:9000` from both the Apache and nginx vhosts.
+      Fixed upstream in 8.5.12, 8.4.27, 8.3.36, 8.2.35.
+
+      **Checked rather than assumed what this means for this repo.** Running
+      containers were `docker exec php84dev php -v` / `php85dev`, confirming
+      this machine was on 8.4.24 and 8.5.9 -- both vulnerable -- from local
+      images last built 2026-08-22, two months stale.
+
+      `docker-library/php/Dockerfile` does `FROM php:${PHP_TAG}-fpm`, where
+      `PHP_TAG` is only the minor version (`8.3`/`8.4`/`8.5`, set as a
+      compose build arg) -- there is no patch-level pin anywhere to bump.
+      That is a real finding, not an excuse: it means this repository needed
+      **no code change** to fix this CVE, only a rebuild, and confirmed the
+      upstream official image had already republished `8.3-fpm`/`8.4-fpm`/
+      `8.5-fpm` with the fix (checked both the Docker Hub tag's
+      `last_updated` timestamp and, directly, `docker run --rm php:8.4-fpm
+      php -v` inside a throwaway container -- 8.3.36/8.4.27/8.5.12, same day
+      as the advisory).
+
+      Remediation taken: rebuilt the images for the two versions this
+      machine actually has installed, `php84dev`/`php85dev`
+      (`docker compose build --pull`, forcing a fresh base layer rather than
+      trusting a cached one under the same floating tag) and recreated the
+      running containers -- confirmed back on 8.4.27/8.5.12 straight after,
+      with the stack still serving (checked against a real site through
+      `nginxdev`, which is what this machine runs instead of Apache).
+
+      Still open, and bigger than this one machine: `publish.yml` needs a
+      `workflow_dispatch` run (no Dockerfile change required) so
+      `ghcr.io/zelti/php-devforge/php:8.{3,4,5}-dev` republish against the
+      patched base for everyone else. Until that runs, anyone on
+      `IMAGE_MODE=missing` stays on the vulnerable image indefinitely --
+      that mode pulls only if the tag is **absent locally**, so an
+      already-pulled machine never notices a newer one exists on its own;
+      `IMAGE_MODE=always` or a manual `docker compose pull` is the only way
+      an existing install would get it before that republish happens anyway.
+
+      Worth remembering past this one incident: a floating base tag means
+      "rebuild" is always enough and never needs a Dockerfile edit, but it
+      also means nothing *tells* anyone a rebuild is overdue -- this was
+      only caught by a direct report and a manual check. No CI job here
+      watches for a security release in the upstream image the way, say,
+      Dependabot would for a pinned dependency. Not fixed here: raised as its
+      own question, not bundled into this one incident's response.

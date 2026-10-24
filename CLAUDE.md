@@ -55,6 +55,19 @@ An `nginx`/OpenResty alternative exists under `docker-library/nginx/` (same reve
 - One Dockerfile serves every PHP version (`docker-library/php/Dockerfile`, `PHP_TAG` build arg). What the services share lives in `php-base.yml`, pulled in with `extends:` rather than a YAML anchor — an anchor merge replaces a service's `volumes` list, `extends` appends to it, which is what lets each version add its own `./custom/<version>` mount. `custom/php.d` applies to every version; `custom/<version>/php.d` is read after it and wins. `ensure_custom_dirs()` in `lib/compose.sh` creates those folders before compose can, since Docker would create a missing bind source as root.
 - `docker-library/php/config_files/docker-php-entrypoint` replaces the upstream entrypoint: it injects the custom bashrc, force-activates Xdebug when `PHP_XDEBUG=yes`, installs `~/script/cron_php-devforge` as a www-data crontab, starts cron, and `exec sudo "$@"` (the image runs as non-root `php-devforge`, so this is how php-fpm gets root).
 
+## Where work is tracked
+
+There is no `TASKS.md` (retired) and no issue-tracking convention in this repo
+beyond git history and PR descriptions. Open questions, decisions, and
+in-progress/`Needs discussion`/`Not doing` items live in a GitHub Project:
+<https://github.com/users/zelti/projects/2> ("PHP DevForge Roadmap"), owned by
+the repo owner's personal account, not a repo-linked project. Each item is a
+draft issue (title + full write-up in the body, no separate Issue page) with a
+`Status` of `Needs discussion`, `Todo`, `In Progress`, `Done`, or `Not doing`.
+Read it with `gh project item-list 2 --owner zelti`; it needs the `project`
+OAuth scope (`gh auth status` shows current scopes; `gh auth refresh -s
+project` adds it if missing).
+
 ## Conventions
 
 - Comments and script output in this repo are in Spanish; the README is in English. Match the surrounding language when editing a file.

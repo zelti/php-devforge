@@ -24,12 +24,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          flags=()
           # A prerelease tag (v0.3.0-beta.1) always has a hyphen after the
-          # numbers; a real release tag never does. Marked as such so GitHub
-          # never counts it as "latest" -- that is GitHub's own distinction,
-          # not something this has to simulate.
+          # numbers; a real release tag never does. --latest is explicit
+          # rather than left to GitHub's own "automatic" default, which goes
+          # by publish date, not semver -- a release created out of order
+          # (backfilling an old tag that never got one, say) can otherwise
+          # silently steal "latest" from something newer. Caught exactly
+          # that way backfilling v0.2.0 after v0.3.0 already existed, so
+          # here it is compared against every release that already exists
+          # (sort -V is fine in CI -- always Linux/GNU, unlike bin/forge's
+          # own version_lt, which also has to run on macOS) rather than
+          # trusting this one tag's place in time.
           case "$TAG" in
-            v*-*) flags+=(--prerelease) ;;
+            v*-*) flags=(--latest=false --prerelease) ;;
+            *)
+              highest="$(gh release list --json tagName -q '.[].tagName' \
+                | { echo "$TAG"; cat; } | grep -vE -- '-' | sort -V | tail -1)"
+              if [ "$highest" = "$TAG" ]; then flags=(--latest); else flags=(--latest=false); fi
+              ;;
           esac
           gh release create "$TAG" --title "PHP DevForge ${TAG#v}" --generate-notes "${flags[@]}"

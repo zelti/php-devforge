@@ -2,9 +2,14 @@ name: Tag a version bump
 
 # Only a VERSION change on main, so this never creates a tag on its own
 # initiative -- a version bump is the one signal that means "this is a
-# release." Tagging is kept separate from release.yml (which reacts to any
-# v* tag, however it got there) rather than folded into one step, so a tag
-# created by hand still gets released the same way.
+# release." Tagging is kept logically separate from release.yml (which
+# reacts to any v* tag, however it got there) -- a tag created by hand still
+# gets released that way -- but this workflow calls the release step itself
+# too, rather than relying on that push to trigger release.yml: GitHub does
+# not fire other workflows from a push made with the default GITHUB_TOKEN
+# (anti-recursion, not configurable), so a tag pushed by *this* bot would
+# otherwise go tagged-but-unreleased exactly like v0.2.0 once did -- caught
+# only once a real bump (0.3.0) went through this path for the first time.
 on:
   push:
     branches: [main]
@@ -21,18 +26,21 @@ jobs:
 
       # GITHUB_TOKEN is enough; no secrets to manage, same as release.yml.
       - name: tag the version in VERSION, if it is new
+        id: tag
         run: |
           v="$(cat VERSION)"
           # The -beta.1/-rc.1 suffix is optional: a prerelease is still semver.
           echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || {
             echo "VERSION is not semver: '$v'"; exit 1; }
           tag="v$v"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
           # Checked against the remote, not a local `git tag -l`: checkout's
           # default fetch-tags=false means the local list would always come
           # back empty here regardless of what actually exists.
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
             echo "$tag already exists -- nothing to do"
+            echo "created=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -40,3 +48,31 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$tag" -m "PHP DevForge $v"
           git push origin "$tag"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+      # Only reached for a tag this run actually created -- re-running on an
+      # existing tag (nothing new pushed) leaves release.yml's own push
+      # trigger as the one source of truth for that case, same as a
+      # hand-pushed tag.
+      - name: create the GitHub Release
+        if: steps.tag.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          # --latest explicit, compared against every release that already
+          # exists, rather than trusting GitHub's own "automatic" (by publish
+          # date) default -- see the longer note in release.yml, which shares
+          # this exact snippet. This path only runs for a tag just created
+          # fresh in this same run, never a backfill, but VERSION could in
+          # principle be bumped backward by mistake in some future PR, and
+          # explicit costs nothing here either.
+          case "$TAG" in
+            v*-*) flags=(--latest=false --prerelease) ;;
+            *)
+              highest="$(gh release list --json tagName -q '.[].tagName' \
+                | { echo "$TAG"; cat; } | grep -vE -- '-' | sort -V | tail -1)"
+              if [ "$highest" = "$TAG" ]; then flags=(--latest); else flags=(--latest=false); fi
+              ;;
+          esac
+          gh release create "$TAG" --title "PHP DevForge ${TAG#v}" --generate-notes "${flags[@]}"

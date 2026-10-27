@@ -396,8 +396,8 @@ cmd_update() {
             err "You have local changes -- refusing to update over them."
             echo "$dirty" | sed 's/^/  /' >&2
             if grep -q 'docker-library/' <<<"$dirty"; then
-                echo "  docker-library/ changes with every release -- see the README's" >&2
-                echo "  note on customising without breaking upgrades." >&2
+                echo "  docker-library/ changes with every release -- see DOCS.md," >&2
+                echo "  \"Customising Without Breaking Upgrades\"." >&2
             fi
             echo "  Stash them and update anyway:  forge update --stash" >&2
             exit 1

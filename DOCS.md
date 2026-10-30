@@ -131,7 +131,7 @@ forge link ~/code/app/public # publish a project at app.<domain>
 forge tunnel                 # and a public URL, to reach it from outside this machine
 
 forge php list               # PHP versions, and which are installed
-forge php on|off 8.3         # install one, or free the ~2 GB it uses
+forge php on|off 8.3         # add a version, or stop serving it
 forge use 8.5                # set the default version (installs it if needed)
 forge run composer install   # run a command in the right container
 forge shell 8.4              # open a shell in a container

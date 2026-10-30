@@ -132,7 +132,7 @@ forge link ~/code/app/public # publicar un proyecto en app.<dominio>
 forge tunnel                 # y una URL pública, para llegar desde fuera de tu máquina
 
 forge php list               # versiones de PHP, y cuáles están instaladas
-forge php on|off 8.3         # instalar una, o liberar los ~2 GB que ocupa
+forge php on|off 8.3         # añadir una versión, o dejar de servirla
 forge use 8.5                # cambiar la versión por defecto (la instala si falta)
 forge run composer install   # ejecutar un comando en el contenedor correcto
 forge shell 8.4              # entrar a un contenedor

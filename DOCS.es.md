@@ -53,11 +53,9 @@
 
    Nada necesita `sudo` salvo el paso del DNS, y solo si lo aceptas.
 
-3. **Carga los atajos (opcional):**
-   ```bash
-   source aliases.bash
-   ```
-   O añade esa línea a tu `~/.bashrc`, con la ruta completa a esta carpeta.
+3. **Úsalo desde cualquier sitio:**
+   El instalador enlaza `forge` en `~/.local/bin`, así que el comando funciona desde
+   cualquier carpeta y en cualquier shell. `forge help` lo lista todo.
 
 4. **Levanta el entorno:**
    ```bash

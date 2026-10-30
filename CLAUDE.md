@@ -11,9 +11,12 @@ Nothing hardcodes where the repo lives — `aliases.bash` resolves its own locat
 ## Commands
 
 ```bash
-docker compose up -d          # start (aliased: forge:start)
-docker compose stop           # stop  (forge:stop)
-docker compose logs -f php84dev
+forge start                   # start
+forge stop                    # stop
+forge logs 8.4                # follow one version's logs
+forge restart apachedev       # recreate one container
+forge help                    # every command
+
 docker compose build apachedev            # rebuild one image
 docker compose config                     # validate compose + .env interpolation
 
@@ -21,13 +24,20 @@ docker compose config                     # validate compose + .env interpolatio
 ./setup-local-dns.sh          # point system resolver at 127.0.0.1 (dnsmasq)
 ./setup-local-dns.sh --show   # inspect current DNS config
 ./setup-local-dns.sh --restore ~/.dns-backup-<timestamp>   # undo DNS changes
-
-source aliases.bash           # forge:* helpers
 ```
 
-Switching the default PHP version means editing `PHP_VERSION` in `.env` (83 or 84) and re-running `docker compose up -d` — that is exactly what `forge:use:php83` / `forge:use:php84` do. `PHP_VERSION` is consumed at compose-parse time (`depends_on: php${PHP_VERSION}dev`) and at runtime by Apache, so it must be changed in `.env`, not exported ad hoc.
+`forge` is the interface; reach for `docker compose` only for the two things it
+does not wrap. The `forge:start` / `forge:use:php84` aliases this file used to
+teach **no longer exist** — they only worked in bash, and `bin/forge` replaced
+them. `aliases.bash` survives as a one-line PATH helper for when `~/.local/bin`
+is not on `PATH`, or for a second checkout; it defines no aliases.
 
-Inside a PHP container (`forge:exec:php84` → `docker exec -u php-devforge php84dev bash`):
+Switching the default PHP version is `forge use 8.4`, which writes `PHP_VERSION`
+in `.env` and recreates the containers. It has to live in `.env` rather than an ad
+hoc export: it is read at compose-parse time (`depends_on: php${PHP_VERSION}dev`)
+and again at runtime by the web server.
+
+Inside a PHP container (`forge shell 8.4`, or `forge run <command>` for one-offs):
 
 ```bash
 xdebug                    # toggle Xdebug for CLI + FPM
@@ -73,12 +83,14 @@ project` adds it if missing).
 - Comments and script output in this repo are in Spanish; `README.md` and `DOCS.md` are in English, `README.es.md` and `DOCS.es.md` their translations. Edit a page and its translation together. Match the surrounding language when editing a file.
 - Rebuilding a PHP image is expensive (compiles GD/intl/etc., PECL builds, clones nvm, installs Node 19). Prefer changes to mounted config over Dockerfile changes when both are possible.
 
-## Known inconsistencies in the current tree
+## Where to look when something is off
 
-Verify before assuming any of these are intentional; several will bite on a fresh setup.
+The tracker is the GitHub Project linked below, not a list in this file. A list
+here cannot be closed by a commit, so it only ever drifts: the five entries that
+used to sit in this spot were all fixed long ago and still read as live warnings
+— a wrong certificate name, a broken mkcert branch, a `forge:` alias that no
+longer exists, an Xdebug port that had already moved from 9000 to 9003. Anyone
+who trusted them went looking for bugs that were not there.
 
-- **Compose cannot build the PHP images.** `dockerfile: ./docker-library/php/8.3` is resolved relative to the build context (`./docker-library/php`), so it points at a non-existent nested path — and `8.3` is a directory, not a file. The working value is `8.3/Dockerfile`.
-- **Certificate filename mismatch.** `install_cert.sh` writes `certificates/php-devbox.{pem,key}`, but the Apache vhost reads `/etc/apache2/ssl/php-devforge.{pem,key}`. HTTPS will not start until the names agree (the nginx template also expects `php-devbox.*`).
-- **`install_cert.sh` guards on the wrong path**: it tests `[ -f install_linux.sh ]` (repo root) before running `bash mkcert_install/install_linux.sh`, so the mkcert install branch always aborts.
-- **`forge:current` reads `$HOME//configs-docker/.env`**, a stale path from a previous project name.
-- **Xdebug's `client_port` is 9000**, the same port FPM listens on; `xdebug` reloads FPM with a hardcoded `kill -USR2 40` (assumes the master is PID 40).
+Check the tree first and the Project second; add a finding to the Project rather
+than to this page.

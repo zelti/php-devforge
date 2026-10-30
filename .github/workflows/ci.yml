@@ -28,17 +28,22 @@ jobs:
             docker-library/php/config_files/xdebug \
             docker-library/httpd/config_files/docker-entrypoint.sh
 
-      # `forge` exists so the common commands are one word; a README that teaches
+      # `forge` exists so the common commands are one word; a page that teaches
       # `docker compose up` instead is how it stayed undiscovered until someone
       # installed the project and never found `forge help`. Prose about what CI
       # validates may still say `docker compose config` -- that is not an instruction.
-      - name: the READMEs do not teach docker compose
+      #
+      # DOCS is in here as well as the READMEs, and that is the point: splitting the
+      # README moved every install and usage instruction into DOCS, which is exactly
+      # where someone would reach for `docker compose` -- and this check would have
+      # kept passing while looking at the two pages the instructions had left.
+      - name: the docs do not teach docker compose
         run: |
           fail=0
           for pattern in 'docker compose up' 'docker compose logs' \
                          'docker compose stop' 'docker compose --profile' \
                          'docker compose build'; do
-            if grep -n "$pattern" README.md README.es.md; then
+            if grep -n "$pattern" README.md README.es.md DOCS.md DOCS.es.md; then
               echo "^ use the forge command instead"; fail=1
             fi
           done

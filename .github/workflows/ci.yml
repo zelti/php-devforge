@@ -33,17 +33,18 @@ jobs:
       # installed the project and never found `forge help`. Prose about what CI
       # validates may still say `docker compose config` -- that is not an instruction.
       #
-      # DOCS is in here as well as the READMEs, and that is the point: splitting the
-      # README moved every install and usage instruction into DOCS, which is exactly
-      # where someone would reach for `docker compose` -- and this check would have
-      # kept passing while looking at the two pages the instructions had left.
+      # Every page is in here, and keeping it that way is the point: each time a
+      # page has been split off -- DOCS out of the README, then CONTRIBUTING out
+      # of DOCS -- the instructions moved somewhere this check was not looking,
+      # and it would have kept passing while watching the pages they had left.
       - name: the docs do not teach docker compose
         run: |
           fail=0
           for pattern in 'docker compose up' 'docker compose logs' \
                          'docker compose stop' 'docker compose --profile' \
                          'docker compose build'; do
-            if grep -n "$pattern" README.md README.es.md DOCS.md DOCS.es.md; then
+            if grep -n "$pattern" README.md README.es.md DOCS.md DOCS.es.md \
+                                  CONTRIBUTING.md CONTRIBUTING.es.md; then
               echo "^ use the forge command instead"; fail=1
             fi
           done

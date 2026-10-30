@@ -126,7 +126,9 @@ this page reads with yours substituted.
 
 ## 📖 Full documentation
 
-Everything else — installing, updating, databases, optional services, nginx, Xdebug, DNS, troubleshooting and contributing — lives in **[DOCS.md](DOCS.md)**.
+Everything else — installing, updating, databases, optional services, tunnels, nginx, Xdebug, DNS and troubleshooting — lives in **[DOCS.md](DOCS.md)**.
+
+Sending a pull request, running one CI step locally, cutting a release: **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ## 📄 License
 

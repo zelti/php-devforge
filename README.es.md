@@ -126,7 +126,9 @@ todos los ejemplos de esta página se leen con el tuyo puesto.
 
 ## 📖 Documentación completa
 
-Todo lo demás — instalar, actualizar, bases de datos, servicios opcionales, nginx, Xdebug, DNS, resolución de problemas y cómo contribuir — está en **[DOCS.es.md](DOCS.es.md)**.
+Todo lo demás — instalar, actualizar, bases de datos, servicios opcionales, túneles, nginx, Xdebug, DNS y resolución de problemas — está en **[DOCS.es.md](DOCS.es.md)**.
+
+Mandar un pull request, ejecutar un paso de la CI en local, publicar una versión: **[CONTRIBUTING.es.md](CONTRIBUTING.es.md)**.
 
 ## 📄 Licencia
 

@@ -74,7 +74,7 @@ for keeping many projects on one shared environment with no per-project setup.
 
 ## 📖 What you get
 
-- **Apache + PHP-FPM 8.3, 8.4 and 8.5** — install the ones you want, chosen per request
+- **Apache (or nginx) + PHP-FPM 8.3, 8.4 and 8.5** — install the ones you want, chosen per request
 - **Automatic HTTPS** with a locally trusted CA, and wildcard local DNS that only touches your dev domain
 - **Live editing** — files are mounted, nothing to sync
 - **Files stay yours** — containers adopt your user id, so no `sudo` and no unremovable `node_modules`

@@ -74,7 +74,7 @@ pensado para tener muchos proyectos sobre un mismo entorno, sin configurar ningu
 
 ## 📖 Qué incluye
 
-- **Apache + PHP-FPM 8.3, 8.4 y 8.5** — instala las que quieras, elegidas por petición
+- **Apache (o nginx) + PHP-FPM 8.3, 8.4 y 8.5** — instala las que quieras, elegidas por petición
 - **HTTPS automático** con una CA de confianza local, y DNS comodín que solo toca tu dominio de desarrollo
 - **Edición en vivo** — los ficheros están montados, no hay nada que sincronizar
 - **Los ficheros siguen siendo tuyos** — los contenedores adoptan tu usuario: ni `sudo` ni `node_modules` imborrables

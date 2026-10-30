@@ -284,8 +284,9 @@ configuration change — only a service in `docker-compose.yml`.
 ## 📱 Public tunnels
 
 Everything above is reachable from this machine and nowhere else. `forge tunnel`
-gives a project a public URL, which is how you try it on a real phone instead of
-a narrow browser window.
+gives a project a public URL — which is how you try it on a real phone instead of
+a narrow browser window, and how you show a client where things stand without
+deploying anything anywhere.
 
 Two shapes, and the only difference is whether you hand Cloudflare any credentials.
 
@@ -304,7 +305,7 @@ foreground and ends with Ctrl+C. Nothing is installed and nothing is left behind
 > reaches it — and your database, and whatever test data is in it. The address is
 > random, which is not the same as secret.
 
-### 📧 Letting only yourself in
+### 📧 Letting in only who you name
 
 ```bash
 forge tunnel --allowed-mail you@example.com
@@ -312,7 +313,8 @@ forge tunnel --allowed-mail you@example.com --allowed-mail '*@acme.com'
 ```
 
 The visitor types that address, Cloudflare emails a one-time PIN, and only then
-does the request reach your machine. **Your app never sees the login** — it
+does the request reach your machine. Your own address for a phone, the client's
+for a demo. **Your app never sees the login** — it
 belongs to Cloudflare, in front of the tunnel, so there is nothing to wire up and
 nothing to remove afterwards.
 

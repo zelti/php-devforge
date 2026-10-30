@@ -298,8 +298,9 @@ ninguna configuración: basta un servicio en `docker-compose.yml`.
 ## 📱 Túneles públicos
 
 Todo lo anterior se alcanza desde esta máquina y desde ninguna otra.
-`forge tunnel` le da a un proyecto una URL pública, que es como se prueba en un
-teléfono de verdad en vez de en una ventana estrecha del navegador.
+`forge tunnel` le da a un proyecto una URL pública — que es como se prueba en un
+teléfono de verdad en vez de en una ventana estrecha del navegador, y como le
+enseñas a un cliente por dónde va la cosa sin desplegar nada en ningún sitio.
 
 Dos formas, y la única diferencia es si le das credenciales a Cloudflare.
 
@@ -318,7 +319,7 @@ Corre en primer plano y termina con Ctrl+C. No instala nada ni deja nada detrás
 > llega a ella — y a tu base de datos, y a los datos de prueba que tenga dentro.
 > La dirección es aleatoria, que no es lo mismo que secreta.
 
-### 📧 Dejar entrar solo a ti
+### 📧 Dejar entrar solo a quien tú digas
 
 ```bash
 forge tunnel --allowed-mail tu@ejemplo.com
@@ -326,7 +327,8 @@ forge tunnel --allowed-mail tu@ejemplo.com --allowed-mail '*@acme.com'
 ```
 
 Quien visite escribe esa dirección, Cloudflare le manda un PIN de un solo uso, y
-solo entonces la petición llega a tu máquina. **Tu app no ve nada de ese inicio
+solo entonces la petición llega a tu máquina. La tuya para el teléfono, la del
+cliente para enseñárselo. **Tu app no ve nada de ese inicio
 de sesión**: es de Cloudflare, delante del túnel, así que no hay nada que montar
 ni nada que quitar después.
 

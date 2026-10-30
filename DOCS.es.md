@@ -605,6 +605,56 @@ por `nginx:alpine` no funcionaría.
 Son definiciones reales, no YAML comentado, así que `docker compose config` y la CI las
 siguen validando y no pueden romperse en silencio.
 
+### 🔨 Escribir un perfil propio
+
+Los servicios de arriba no tienen nada especial: cada uno es un servicio de
+compose con una clave `profiles:`. Pon uno en `docker-compose.local.yml` y se
+une a ellos — `forge profile` lo descubre solo, así que no hay ninguna lista
+donde darlo de alta.
+
+```yaml
+services:
+  redisdev:
+    profiles: ["redis"]          # ← esta línea es todo
+    image: redis:7-alpine
+    container_name: redisdev
+    ports:
+      - 127.0.0.1:6379:6379
+    restart: unless-stopped
+```
+
+Ya está. Nace apagado, hasta que lo pidas:
+
+```console
+$ forge profile list
+  redis       off  redis:7-alpine
+$ forge profile on redis
+```
+
+La columna de la imagen sale de los propios ficheros de compose, no de una tabla
+que alguien tenga que mantener, así que tu servicio se describe igual que los
+que vienen de serie. Una vez encendido, `forge logs redisdev` también funciona —
+un servicio de un perfil apagado está oculto para compose, que es justamente por
+lo que no cuesta nada tenerlo escrito.
+
+**Llegar desde PHP.** Usa el nombre del servicio como host: los contenedores
+comparten red y compose le da ese alias a cada uno. Igual que se llega a los que
+vienen de serie:
+
+```php
+$redis = new Redis();
+$redis->connect('redisdev', 6379);
+```
+
+**Llegar desde la máquina** es para lo que está la línea `ports:`, y el
+`127.0.0.1:` de delante conviene dejarlo: sin él Docker abre el puerto en todas
+las interfaces, que en un portátil significa también el wifi de la cafetería.
+
+**Es tuyo y se queda.** `docker-compose.local.yml` está fuera de git, así que
+`git pull` nunca choca con él y `forge update` ni lo mira. La otra cara es que no
+viaja: quien clone el repositorio no se lleva tu Redis. Si lo necesita el equipo
+entero, su sitio es `docker-compose.override.yml` y un pull request.
+
 ## 🤖 Agentes de IA
 
 El repo trae un archivo de skill, `skills/php-devforge/SKILL.md`, que le enseña a

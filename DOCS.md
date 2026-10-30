@@ -596,6 +596,55 @@ image for `nginx:alpine` will not work.
 They are real service definitions rather than commented-out YAML, so
 `docker compose config` and CI keep checking them and they cannot quietly break.
 
+### 🔨 Writing a profile of your own
+
+The services above are nothing special: each is a compose service with a
+`profiles:` key. Put one in `docker-compose.local.yml` and it joins them —
+`forge profile` discovers it, so there is no list anywhere to register it in.
+
+```yaml
+services:
+  redisdev:
+    profiles: ["redis"]          # ← this line is the whole thing
+    image: redis:7-alpine
+    container_name: redisdev
+    ports:
+      - 127.0.0.1:6379:6379
+    restart: unless-stopped
+```
+
+That is all. It is off until you ask for it:
+
+```console
+$ forge profile list
+  redis       off  redis:7-alpine
+$ forge profile on redis
+```
+
+The image column is read from the compose files, not from a table someone has to
+keep up to date, so your service describes itself the same way the shipped ones
+do. Once it is on, `forge logs redisdev` works too — a service belonging to an
+idle profile is hidden from compose entirely, which is how it costs nothing.
+
+**Reaching it from PHP.** Use the service name as the host — containers share a
+network and compose gives each one that alias. Exactly how the shipped ones are
+reached:
+
+```php
+$redis = new Redis();
+$redis->connect('redisdev', 6379);
+```
+
+**Reaching it from the host** is what the `ports:` line is for, and `127.0.0.1:`
+in front of it is worth keeping: without it Docker opens the port on every
+interface, which on a laptop means the café's wifi too.
+
+**It stays yours.** `docker-compose.local.yml` is ignored by git, so `git pull`
+never conflicts with it and `forge update` leaves it alone. The flip side is that
+it does not travel: a teammate cloning the repo does not get your Redis. If the
+whole team needs it, it belongs in `docker-compose.override.yml` and in a pull
+request.
+
 ## 🤖 AI agents
 
 The repo carries a skill file, `skills/php-devforge/SKILL.md`, that teaches an AI

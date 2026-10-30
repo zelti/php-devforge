@@ -26,12 +26,24 @@
 
 ### 🚀 Pasos
 
+En una línea, si prefieres no hacer los dos primeros a mano — clona el repositorio
+y le pasa el testigo al mismo instalador, nada más:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zelti/php-devforge/main/bootstrap.sh | bash
+```
+
+Clona en `$HOME/php-devforge-config` salvo que digas otra cosa con `--dir=` o
+`PHP_DEVFORGE_HOME`. ¿Prefieres leerlo antes? Guárdalo con `-o bootstrap.sh`,
+léelo, y luego `bash bootstrap.sh`. Acabes como acabes, llegas al mismo sitio que
+con los pasos de abajo, así que sigue por el 3.
+
 1. **Clona el repositorio:**
    ```bash
    git clone https://github.com/zelti/php-devforge.git
    cd php-devforge
    ```
-   Clónalo donde quieras: los scripts y los alias averiguan su propia ubicación.
+   Clónalo donde quieras: los scripts averiguan su propia ubicación.
 
 2. **Ejecuta el instalador:**
    ```bash
@@ -135,6 +147,7 @@ forge certs                  # regenerar los certificados
 forge dns status             # ver el DNS local
 forge skill status           # enseñarle a los agentes de IA a usar esto
 
+forge install                # reejecutar el instalador: dominio, versiones o perfiles
 forge uninstall              # deshacer la instalación (ver más abajo)
 forge version
 forge help

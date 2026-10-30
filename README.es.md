@@ -75,6 +75,7 @@ pensado para tener muchos proyectos sobre un mismo entorno, sin configurar ningu
 ## 📖 Qué incluye
 
 - **Apache (o nginx) + PHP-FPM 8.3, 8.4 y 8.5** — instala las que quieras, elegidas por petición
+- **El dominio que tú quieras** — `phpforge.dev` es solo el de por defecto; el instalador pregunta
 - **HTTPS automático** con una CA de confianza local, y DNS comodín que solo toca tu dominio de desarrollo
 - **Edición en vivo** — los ficheros están montados, no hay nada que sincronizar
 - **Los ficheros siguen siendo tuyos** — los contenedores adoptan tu usuario: ni `sudo` ni `node_modules` imborrables
@@ -104,6 +105,10 @@ forge start
 ```
 
 Y abre **https://welcome.phpforge.dev**.
+
+`phpforge.dev` es solo el de por defecto. El instalador te pregunta qué dominio
+quieres, así que `welcome.midominio.dev` o `welcome.acme.test` funcionan igual —
+todos los ejemplos de esta página se leen con el tuyo puesto.
 
 ## ⌨️ Los comandos que vas a usar
 

@@ -26,12 +26,24 @@
 
 ### 🚀 Setup Steps
 
+In one line, if you would rather not do the first two by hand — it clones the
+repository and hands over to the same installer, nothing more:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zelti/php-devforge/main/bootstrap.sh | bash
+```
+
+It clones into `$HOME/php-devforge-config` unless you say otherwise with
+`--dir=` or `PHP_DEVFORGE_HOME`. Rather read it first? Save it with `-o
+bootstrap.sh`, read it, then `bash bootstrap.sh`. Either way you end up in the
+same place as the steps below, so carry on at step 3.
+
 1. **Clone the repository:**
    ```bash
    git clone git@github.com:zelti/php-devforge.git
    cd php-devforge
    ```
-    Clone it wherever you like: the scripts and aliases resolve their own location.
+    Clone it wherever you like: the scripts resolve their own location.
 
 2. **Run the installer:**
    ```bash
@@ -134,6 +146,7 @@ forge certs                  # regenerate the certificates
 forge dns status             # inspect the local DNS
 forge skill status           # teach the AI agents here how to use this
 
+forge install                # re-run the installer, to change domain, versions or profiles
 forge uninstall              # undo the install (see below)
 forge version
 forge help

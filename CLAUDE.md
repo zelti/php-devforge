@@ -81,7 +81,7 @@ project` adds it if missing).
 ## Conventions
 
 - Comments and script output in this repo are in Spanish; `README.md` and `DOCS.md` are in English, `README.es.md` and `DOCS.es.md` their translations. Edit a page and its translation together. Match the surrounding language when editing a file.
-- Rebuilding a PHP image is expensive (compiles GD/intl/etc., PECL builds, clones nvm, installs Node 19). Prefer changes to mounted config over Dockerfile changes when both are possible.
+- Rebuilding a PHP image is expensive (compiles GD/intl/etc., PECL builds, clones nvm, installs Node 24). Prefer changes to mounted config over Dockerfile changes when both are possible.
 
 ## Where to look when something is off
 

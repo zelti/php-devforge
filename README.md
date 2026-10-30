@@ -121,7 +121,7 @@ this page reads with yours substituted.
 | `forge logs` | follow the logs — a blank 500 page is almost always here |
 | `forge php on 8.3 · forge use 8.5` | install a version, or change the default |
 | `forge db on pg18 · forge mail on` | start a database, or the mail catcher |
-| `forge tunnel` | a public URL, to try the site on a real phone |
+| `forge tunnel` | a public URL, to reach the site from outside this machine |
 | `forge help` | all of them |
 
 ## 📖 Full documentation

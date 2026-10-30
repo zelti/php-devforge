@@ -121,7 +121,7 @@ todos los ejemplos de esta página se leen con el tuyo puesto.
 | `forge logs` | seguir los logs — un 500 en blanco casi siempre está aquí |
 | `forge php on 8.3 · forge use 8.5` | instalar una versión, o cambiar la de por defecto |
 | `forge db on pg18 · forge mail on` | arrancar una base de datos, o el buzón de pruebas |
-| `forge tunnel` | una URL pública, para probar el sitio en un móvil de verdad |
+| `forge tunnel` | una URL pública, para llegar al sitio desde fuera de tu máquina |
 | `forge help` | todos |
 
 ## 📖 Documentación completa

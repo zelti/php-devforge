@@ -4,6 +4,8 @@
 
 - [🔧 Instalación](#-instalación)
 - [💻 Uso](#-uso)
+- [🔗 Dominios, y cómo publicar un proyecto](#-dominios-y-cómo-publicar-un-proyecto)
+- [📱 Túneles públicos](#-túneles-públicos)
 - [🌐 DNS local](#-dns-local)
 - [✏️ Personalizar sin romper las actualizaciones](#-personalizar-sin-romper-las-actualizaciones)
 - [📦 Descargar o construir las imágenes](#-descargar-o-construir-las-imágenes)
@@ -164,60 +166,6 @@ lo que haces a diario sea una palabra, y para que lo que tiene truco — un enla
 relativo que los contenedores puedan seguir, nginx y Apache sin pelearse por el
 puerto 80 — salga bien sin que tengas que acordarte de por qué.
 
-### 🌐 Tus proyectos
-
-Viven en la carpeta que elegiste al instalar (`PROJECTS_DIR` en `.env`,
-`~/php-devforge` por defecto):
-
-```
-~/php-devforge/
-├── projects/          tu código
-└── sites/             un enlace simbólico por proyecto, para URLs cortas
-    └── welcome/       página de prueba
-```
-
-Dentro de los contenedores siempre es `/home/php-devforge/public_html`, que es donde
-miran Apache y PHP. Solo el lado del host es configurable.
-
-**Dos formas de llegar al mismo proyecto.** `sites/` es un atajo: se prueba primero,
-y la ruta completa desde la raíz es el respaldo.
-
-| URL | Sirve |
-|---|---|
-| `mi-app.phpforge.dev` | `sites/mi-app` |
-| `v2--api.phpforge.dev` | `sites/api/v2` |
-| `public--mi-app--projects.phpforge.dev` | `projects/mi-app/public` |
-
-Así puedes publicar a propósito con un nombre corto, o llegar a cualquier carpeta por
-su ruta completa sin enlazar nada.
-
-**Para publicar:** `forge link <carpeta> [nombre]` crea el enlace por ti. Usa el nombre
-del proyecto cuando la carpeta se llama `public` (como en todos los frameworks), lo crea
-**relativo** para que también resuelva dentro de los contenedores, y rechaza una carpeta
-fuera de `PROJECTS_DIR` — los contenedores no ven nada más, así que ese enlace daría 404.
-
-A mano sería:
-
-```bash
-cd ~/php-devforge
-ln -s ../projects/mi-app/public sites/mi-app
-```
-
-No hace falta ningún `chown`: los contenedores adoptan tu identificador de usuario
-(`PUID`/`PGID` en `.env`), así que lo que crean es tuyo y `node_modules` se borra sin
-`sudo`.
-
-#### Ejemplo con Laravel
-
-```bash
-ln -s ../projects/mi-app/public ~/php-devforge/sites/mi-app
-```
-
-→ `https://mi-app--sites.phpforge.dev`
-
-El enlace debe apuntar a la carpeta que contiene el `index.php` (el `public/` del
-framework). El `.htaccess` funciona: `AllowOverride All` está activado.
-
 ### 🐘 Versiones de PHP
 
 Se eligen al instalar, igual que las bases de datos, porque cada una es una imagen
@@ -280,6 +228,155 @@ xdebug /ruta/script.php   # ejecutar un script con Xdebug activo
 ```
 
 Configura tu editor para escuchar en el puerto **9003**.
+
+## 🔗 Dominios, y cómo publicar un proyecto
+
+Viven en la carpeta que elegiste al instalar (`PROJECTS_DIR` en `.env`,
+`~/php-devforge` por defecto):
+
+```
+~/php-devforge/
+├── projects/          tu código
+└── sites/             un enlace simbólico por proyecto, para URLs cortas
+    └── welcome/       página de prueba
+```
+
+Dentro de los contenedores siempre es `/home/php-devforge/public_html`, que es donde
+miran Apache y PHP. Solo el lado del host es configurable.
+
+**Dos formas de llegar al mismo proyecto.** `sites/` es un atajo: se prueba primero,
+y la ruta completa desde la raíz es el respaldo.
+
+| URL | Sirve |
+|---|---|
+| `mi-app.phpforge.dev` | `sites/mi-app` |
+| `v2--api.phpforge.dev` | `sites/api/v2` |
+| `public--mi-app--projects.phpforge.dev` | `projects/mi-app/public` |
+
+Así puedes publicar a propósito con un nombre corto, o llegar a cualquier carpeta por
+su ruta completa sin enlazar nada.
+
+**Para publicar:** `forge link <carpeta> [nombre]` crea el enlace por ti. Usa el nombre
+del proyecto cuando la carpeta se llama `public` (como en todos los frameworks), lo crea
+**relativo** para que también resuelva dentro de los contenedores, y rechaza una carpeta
+fuera de `PROJECTS_DIR` — los contenedores no ven nada más, así que ese enlace daría 404.
+
+A mano sería:
+
+```bash
+cd ~/php-devforge
+ln -s ../projects/mi-app/public sites/mi-app
+```
+
+No hace falta ningún `chown`: los contenedores adoptan tu identificador de usuario
+(`PUID`/`PGID` en `.env`), así que lo que crean es tuyo y `node_modules` se borra sin
+`sudo`.
+
+### 🧪 Ejemplo con Laravel
+
+```bash
+ln -s ../projects/mi-app/public ~/php-devforge/sites/mi-app
+```
+
+→ `https://mi-app--sites.phpforge.dev`
+
+El enlace debe apuntar a la carpeta que contiene el `index.php` (el `public/` del
+framework). El `.htaccess` funciona: `AllowOverride All` está activado.
+
+### 🐘 Elegir la versión de PHP desde la URL
+
+Añade `--pNN` al host para elegir versión solo en esa petición:
+
+- `https://mi-app--sites.phpforge.dev` — la de por defecto, la de `.env`
+- `https://mi-app--sites--p83.phpforge.dev` — PHP 8.3
+- `https://mi-app--sites--p84.phpforge.dev` — PHP 8.4
+- `https://mi-app--sites--p85.phpforge.dev` — PHP 8.5
+
+El backend sale del nombre del host, así que añadir una versión no necesita tocar
+ninguna configuración: basta un servicio en `docker-compose.yml`.
+
+## 📱 Túneles públicos
+
+Todo lo anterior se alcanza desde esta máquina y desde ninguna otra.
+`forge tunnel` le da a un proyecto una URL pública, que es como se prueba en un
+teléfono de verdad en vez de en una ventana estrecha del navegador.
+
+Dos formas, y la única diferencia es si le das credenciales a Cloudflare.
+
+### 🎲 Una URL desechable, sin cuenta
+
+```bash
+forge tunnel                 # la carpeta donde estás
+forge tunnel mi-app          # o nombras una carpeta, o un sitio publicado
+forge tunnel --php 8.3       # servirlo con una versión concreta
+```
+
+Una dirección aleatoria `*.trycloudflare.com`, que se imprime al levantarse.
+Corre en primer plano y termina con Ctrl+C. No instala nada ni deja nada detrás.
+
+> ⚠️ **Mientras corre, la app está en internet.** Cualquiera con la dirección
+> llega a ella — y a tu base de datos, y a los datos de prueba que tenga dentro.
+> La dirección es aleatoria, que no es lo mismo que secreta.
+
+### 📧 Dejar entrar solo a ti
+
+```bash
+forge tunnel --allowed-mail tu@ejemplo.com
+forge tunnel --allowed-mail tu@ejemplo.com --allowed-mail '*@acme.com'
+```
+
+Quien visite escribe esa dirección, Cloudflare le manda un PIN de un solo uso, y
+solo entonces la petición llega a tu máquina. **Tu app no ve nada de ese inicio
+de sesión**: es de Cloudflare, delante del túnel, así que no hay nada que montar
+ni nada que quitar después.
+
+Repite la bandera para más de una dirección; `*@dominio` deja entrar a todos los
+de ahí. Necesita cloudflared 2026.9.3 o más nuevo.
+
+Esto es solo del modo desechable. El equivalente de un túnel con nombre es una
+política de Cloudflare Access, que vive en su panel y no es algo que gestione
+este comando.
+
+### 🏷️ Un nombre que se queda, en tu propio dominio
+
+Necesita un dominio que ya esté en tu cuenta de Cloudflare.
+
+```bash
+forge tunnel login                                  # el navegador, una vez
+forge tunnel add mi-app mi-app.tunel.tudominio.com  # crea el registro DNS
+forge tunnel on                                     # en segundo plano, aguanta un reinicio
+forge tunnel status
+forge tunnel rm mi-app
+```
+
+Tras el primero puedes omitir el nombre: `forge tunnel add otra-app` copia la
+forma de lo que ya esté mapeado. Se pueden publicar varios proyectos a la vez, y
+`forge tunnel on` los sirve todos por una sola conexión.
+
+`forge tunnel off` para el túnel y deja los registros DNS donde estaban; quien
+despublica uno es `rm`.
+
+### 🔎 Por qué tu app no necesita ningún cambio
+
+Dos detalles que una línea de `cloudflared` escrita a mano suele errar, y son la
+razón de que esto sea un comando y no un fragmento en el README.
+
+**Va al puerto HTTPS del servidor, no al 80.** Por HTTP en claro la app no ve TLS
+y escribe enlaces `http://` dentro de una página `https://`: el navegador los
+bloquea por contenido mixto, o las redirecciones entran en bucle. El remedio
+habitual es tocar la configuración de proxies de la app — trabajo que un entorno
+de desarrollo no tiene por qué pedirte. Por el 443, PHP recibe `HTTPS=on` de
+verdad y en la app no cambia nada. El certificado propio se salta a propósito, y
+ningún teléfono lo ve nunca, porque el HTTPS público lo pone Cloudflare.
+
+**La cabecera `Host` se pasa intacta.** El servidor elige el proyecto a partir de
+ella, y un túnel manda su propio nombre, que no es de tu dominio local — así que
+lo evidente es reescribirla, y ahí está la trampa. La app se creería entonces que
+vive en `mi-app.phpforge.dev` y escribiría ahí cada enlace y cada redirección,
+ninguno alcanzable desde el teléfono. En vez de eso, `forge tunnel` da de alta el
+nombre público como un sitio más mientras el túnel vive, en una carpeta
+`.tunnel/` al lado de `sites/`, y la barre al salir — también después de cerrar
+la ventana a lo bruto. La app ve la dirección que el visitante usó de verdad.
 
 ## 🌐 DNS local
 

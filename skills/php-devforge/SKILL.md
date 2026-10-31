@@ -217,6 +217,39 @@ Ask before running anything that changes the machine outside Docker: `forge
 install`, `forge uninstall`, `forge certs` and `forge dns setup` touch the system
 resolver or the trusted certificate store and need `sudo`.
 
+## Adding a service of your own
+
+A new service goes in **`docker-compose.local.yml`**, never in
+`docker-compose.yml`. That file is gitignored and loaded automatically, so
+`git pull` and `forge update` leave it alone; editing the tracked compose file
+conflicts on the next update, which is the user's upgrade path.
+
+A `profiles:` key is the whole registration — there is no list to add it to,
+and `forge profile list` discovers it:
+
+```yaml
+services:
+  redisdev:
+    profiles: ["redis"]          # <- this line is the whole thing
+    image: redis:7-alpine
+    container_name: redisdev
+    ports:
+      - 127.0.0.1:6379:6379      # keep the 127.0.0.1: or Docker opens it on every interface
+    restart: unless-stopped
+```
+
+It is born off: `forge profile on redis` starts it. From PHP, reach it by the
+service name — containers share a network and compose gives each one that alias.
+Use the `127.0.0.1` port only from host tools.
+
+```php
+$redis = new Redis();
+$redis->connect('redisdev', 6379);
+```
+
+If the whole team needs it, it belongs in `docker-compose.override.yml` and a
+pull request. `docker-compose.local.yml` does not travel.
+
 ## Things that will bite
 
 - **`sudo` is never needed for project files.** The PHP containers adopt the
@@ -231,6 +264,11 @@ resolver or the trusted certificate store and need `sudo`.
   usually a site linked to the project root instead of its `public/`.
 - **A page saying a PHP version is not installed** is not an error in your code:
   run `forge php on <version>`.
+- **A service whose profile is off does not exist**, as far as compose is
+  concerned: it is hidden from `docker compose config --services`, so
+  `forge logs mariadb12dev` answers `Unknown service` and lists only what is on.
+  That reads like a missing service; the fix is `forge profile on`, not a
+  compose file edit.
 - **Rebuilding a PHP image is expensive** (it compiles extensions and installs
   Node). Prefer `custom/php.d/*.ini`, which needs only a restart.
 

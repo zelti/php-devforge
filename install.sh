@@ -243,6 +243,40 @@ fi
 PROJ="${PROJ/#\~/$HOME}"
 case "$PROJ" in /*) ;; *) PROJ="$PWD/$PROJ" ;; esac
 
+# The checkout and the projects folder cannot be the same directory, and
+# neither can sit inside the other. The checkout is a git repository that
+# `forge update` pulls into; the projects folder is bind-mounted as the whole
+# web tree. Overlap them and `git status` lists every project you own, a
+# `git clean -fd` deletes them, and .env -- which holds the database password
+# -- is served from inside the document root.
+#
+# This is reachable by following the README: `git clone <url>` run from $HOME
+# leaves the checkout at ~/php-devforge, which is also the default answer to
+# "where will your projects live?". Pressing Enter was enough.
+overlaps() { # a b -> 0 when they are the same directory, or one is inside the other
+    [ "$1" = "$2" ] && return 0
+    case "$1/" in "$2"/*) return 0 ;; esac
+    case "$2/" in "$1"/*) return 0 ;; esac
+    return 1
+}
+
+if overlaps "$(readlink -m "$PROJ")" "$(readlink -m "$PWD")"; then
+    err "Your projects cannot live in the PHP DevForge checkout."
+    {
+        echo "    checkout: $PWD"
+        echo "    projects: $PROJ"
+        echo
+        echo "  These have to be two separate folders. The usual layout:"
+        echo
+        echo "    ~/php-devforge-config    this checkout (where bootstrap.sh clones it)"
+        echo "    ~/php-devforge           your projects"
+        echo
+        echo "  Either move the checkout, or answer with a folder of its own:"
+        echo "    ./install.sh --projects-dir=~/php-devforge"
+    } >&2
+    exit 1
+fi
+
 PHP_PROFILES=""
 for v in $PHPS; do
     v="${v//./}"

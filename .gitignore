@@ -22,3 +22,9 @@
 /custom/cloudflared/*
 !/custom/cloudflared/.gitkeep
 /.env.backup
+
+# install.sh refuses a projects folder that overlaps this checkout, but a
+# PROJECTS_DIR edited into .env by hand can still land here -- and then every
+# project you own is untracked in this repository, one `git clean -fd` from gone.
+/projects/
+/sites/

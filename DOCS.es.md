@@ -41,10 +41,15 @@ con los pasos de abajo, así que sigue por el 3.
 
 1. **Clona el repositorio:**
    ```bash
-   git clone https://github.com/zelti/php-devforge.git
-   cd php-devforge
+   git clone https://github.com/zelti/php-devforge.git php-devforge-config
+   cd php-devforge-config
    ```
-   Clónalo donde quieras: los scripts averiguan su propia ubicación.
+   Clónalo donde quieras — los scripts averiguan su propia ubicación — con una
+   excepción: no dentro de la carpeta donde vivirán tus proyectos, ni esa misma.
+   Esa se monta como todo el árbol web y se llena de `projects/` y `sites/`;
+   esta es un repositorio de git al que `forge update` hace pull. El instalador
+   rechaza el solape, y el nombre de arriba la deja lejos de la carpeta de
+   proyectos por defecto, `~/php-devforge`.
 
 2. **Ejecuta el instalador:**
    ```bash

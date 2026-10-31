@@ -231,7 +231,10 @@ jobs:
       - name: an old .env is brought up to the example
         run: |
           set -euo pipefail
-          export PATH="$HOME/.local/bin:$PATH"
+          # Called by path: this step runs before the job links forge into
+          # ~/.local/bin, and passes --skip-link itself, so the bare name is
+          # not there. By path it also does not care where the step sits.
+          forge() { ./bin/forge "$@"; }
           keys() { sed -ne 's/^\([A-Z_][A-Z_0-9]*\)=.*/\1/p' "$1"; }
 
           rm -f .env .env.backup

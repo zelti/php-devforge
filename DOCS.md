@@ -98,6 +98,12 @@ are yours and never touched) stop it rather than risk losing them —
 `forge update --stash` carries them through instead of git commands you'd have to
 run yourself.
 
+A key that a release introduced arrives on its own, whichever way you got the new
+code — `forge update` or a plain `git pull`. Any `forge` command compares `.env`
+against `.env.example`, adds what is missing along with the comment that explains
+it, and tells you once which keys it added. Your own answers are never touched, and
+the file as it was is kept as `.env.backup`.
+
 Docker images are versioned separately, on a floating tag that does not follow
 along automatically: `docker compose pull` if you want the latest one too.
 

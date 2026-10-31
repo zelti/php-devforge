@@ -11,9 +11,12 @@ Nothing hardcodes where the repo lives — `aliases.bash` resolves its own locat
 ## Commands
 
 ```bash
-docker compose up -d          # start (aliased: forge:start)
-docker compose stop           # stop  (forge:stop)
-docker compose logs -f php84dev
+forge start                   # start
+forge stop                    # stop
+forge logs 8.4                # follow one version's logs
+forge restart apachedev       # recreate one container
+forge help                    # every command
+
 docker compose build apachedev            # rebuild one image
 docker compose config                     # validate compose + .env interpolation
 
@@ -21,13 +24,20 @@ docker compose config                     # validate compose + .env interpolatio
 ./setup-local-dns.sh          # point system resolver at 127.0.0.1 (dnsmasq)
 ./setup-local-dns.sh --show   # inspect current DNS config
 ./setup-local-dns.sh --restore ~/.dns-backup-<timestamp>   # undo DNS changes
-
-source aliases.bash           # forge:* helpers
 ```
 
-Switching the default PHP version means editing `PHP_VERSION` in `.env` (83 or 84) and re-running `docker compose up -d` — that is exactly what `forge:use:php83` / `forge:use:php84` do. `PHP_VERSION` is consumed at compose-parse time (`depends_on: php${PHP_VERSION}dev`) and at runtime by Apache, so it must be changed in `.env`, not exported ad hoc.
+`forge` is the interface; reach for `docker compose` only for the two things it
+does not wrap. The `forge:start` / `forge:use:php84` aliases this file used to
+teach **no longer exist** — they only worked in bash, and `bin/forge` replaced
+them. `aliases.bash` survives as a one-line PATH helper for when `~/.local/bin`
+is not on `PATH`, or for a second checkout; it defines no aliases.
 
-Inside a PHP container (`forge:exec:php84` → `docker exec -u php-devforge php84dev bash`):
+Switching the default PHP version is `forge use 8.4`, which writes `PHP_VERSION`
+in `.env` and recreates the containers. It has to live in `.env` rather than an ad
+hoc export: it is read at compose-parse time (`depends_on: php${PHP_VERSION}dev`)
+and again at runtime by the web server.
+
+Inside a PHP container (`forge shell 8.4`, or `forge run <command>` for one-offs):
 
 ```bash
 xdebug                    # toggle Xdebug for CLI + FPM
@@ -49,11 +59,11 @@ An `nginx`/OpenResty alternative exists under `docker-library/nginx/` (same reve
 
 ## Container layout
 
-- `docker-compose.yml` — dnsmasq, apachedev, php83dev, php84dev. `docker-compose.override.yml` adds `postgres16dev` (5439 on the host) and has commented Elasticsearch/Kibana. Both files are joined via `COMPOSE_FILE` in `.env`.
-- Code sharing: a named volume `dataphp-devforge` mounts at `/home/php-devforge` in every container, and the **host** path `/home/php-devforge/public_html` is bind-mounted over it. Apache gets `/home/php-devforge` read-only but `public_html` read-write.
-- The PHP user is `php-devforge` with **UID/GID 33** (`www-data`) so host and container permissions line up — hence the README's `chown $USER:www-data -R /home/php-devforge`. FPM itself runs as `www-data`.
+- `docker-compose.yml` — `mkcert` (one-shot, `tools` profile), `dnsmasq`, `apachedev`, `nginxdev` (`nginx` profile — it *replaces* Apache, both want 80 and 443), and `php83dev`/`php84dev`/`php85dev`, one profile each. `docker-compose.override.yml` adds the optional services: `postgres16/17/18dev` (127.0.0.1:5416/5417/5418), `mariadb11/12dev` (3311/3312), `mailpit`, `cloudflared` (`tunnel` profile), `es8143dev` and `kibana`. The three files are joined via `COMPOSE_FILE` in `.env`, with `docker-compose.local.yml` last so your own overrides win.
+- Code sharing: a named volume `dataphp-devforge` mounts at `/home/php-devforge` in every container, and `PROJECTS_DIR` from `.env` is bind-mounted over `/home/php-devforge/public_html`. Apache gets `/home/php-devforge` read-only but `public_html` read-write.
+- The PHP user is `php-devforge`, **UID/GID 1000 in the image**, remapped at startup to `PUID`/`PGID` from `.env` (`usermod -o -u`) so host and container ownership line up. That is why **no `chown` is needed**: the README's old `sudo chown yourUser:www-data -R /home/php-devforge` was removed in `f7ead35` when this replaced it. The php-fpm **master runs as root** so it can drop its workers to `php-devforge` — `zz-docker.conf` sets that and is read after the upstream `www.conf`, which still says `www-data`. Workers never run as root.
 - One Dockerfile serves every PHP version (`docker-library/php/Dockerfile`, `PHP_TAG` build arg). What the services share lives in `php-base.yml`, pulled in with `extends:` rather than a YAML anchor — an anchor merge replaces a service's `volumes` list, `extends` appends to it, which is what lets each version add its own `./custom/<version>` mount. `custom/php.d` applies to every version; `custom/<version>/php.d` is read after it and wins. `ensure_custom_dirs()` in `lib/compose.sh` creates those folders before compose can, since Docker would create a missing bind source as root.
-- `docker-library/php/config_files/docker-php-entrypoint` replaces the upstream entrypoint: it injects the custom bashrc, force-activates Xdebug when `PHP_XDEBUG=yes`, installs `~/script/cron_php-devforge` as a www-data crontab, starts cron, and `exec sudo "$@"` (the image runs as non-root `php-devforge`, so this is how php-fpm gets root).
+- `docker-library/php/config_files/docker-php-entrypoint` replaces the upstream entrypoint: it remaps the user to `PUID`/`PGID`, injects the shared bashrc for both the dev user and root, force-activates Xdebug when `PHP_XDEBUG=yes`, installs `~/script/cron_php-devforge` as a **`php-devforge`** crontab (`crontab -u php-devforge`), starts cron, and ends in a plain `exec "$@"` as root — see the note above on why the master needs it.
 
 ## Where work is tracked
 
@@ -70,15 +80,17 @@ project` adds it if missing).
 
 ## Conventions
 
-- Comments and script output in this repo are in Spanish; the README is in English. Match the surrounding language when editing a file.
-- Rebuilding a PHP image is expensive (compiles GD/intl/etc., PECL builds, clones nvm, installs Node 19). Prefer changes to mounted config over Dockerfile changes when both are possible.
+- Comments and script output in this repo are in Spanish; `README.md` and `DOCS.md` are in English, `README.es.md` and `DOCS.es.md` their translations. Edit a page and its translation together. Match the surrounding language when editing a file.
+- Rebuilding a PHP image is expensive (compiles GD/intl/etc., PECL builds, clones nvm, installs Node 24). Prefer changes to mounted config over Dockerfile changes when both are possible.
 
-## Known inconsistencies in the current tree
+## Where to look when something is off
 
-Verify before assuming any of these are intentional; several will bite on a fresh setup.
+The tracker is the GitHub Project linked below, not a list in this file. A list
+here cannot be closed by a commit, so it only ever drifts: the five entries that
+used to sit in this spot were all fixed long ago and still read as live warnings
+— a wrong certificate name, a broken mkcert branch, a `forge:` alias that no
+longer exists, an Xdebug port that had already moved from 9000 to 9003. Anyone
+who trusted them went looking for bugs that were not there.
 
-- **Compose cannot build the PHP images.** `dockerfile: ./docker-library/php/8.3` is resolved relative to the build context (`./docker-library/php`), so it points at a non-existent nested path — and `8.3` is a directory, not a file. The working value is `8.3/Dockerfile`.
-- **Certificate filename mismatch.** `install_cert.sh` writes `certificates/php-devbox.{pem,key}`, but the Apache vhost reads `/etc/apache2/ssl/php-devforge.{pem,key}`. HTTPS will not start until the names agree (the nginx template also expects `php-devbox.*`).
-- **`install_cert.sh` guards on the wrong path**: it tests `[ -f install_linux.sh ]` (repo root) before running `bash mkcert_install/install_linux.sh`, so the mkcert install branch always aborts.
-- **`forge:current` reads `$HOME//configs-docker/.env`**, a stale path from a previous project name.
-- **Xdebug's `client_port` is 9000**, the same port FPM listens on; `xdebug` reloads FPM with a hardcoded `kill -USR2 40` (assumes the master is PID 40).
+Check the tree first and the Project second; add a finding to the Project rather
+than to this page.

@@ -396,8 +396,8 @@ cmd_update() {
             err "You have local changes -- refusing to update over them."
             echo "$dirty" | sed 's/^/  /' >&2
             if grep -q 'docker-library/' <<<"$dirty"; then
-                echo "  docker-library/ changes with every release -- see the README's" >&2
-                echo "  note on customising without breaking upgrades." >&2
+                echo "  docker-library/ changes with every release -- see DOCS.md," >&2
+                echo "  \"Customising Without Breaking Upgrades\"." >&2
             fi
             echo "  Stash them and update anyway:  forge update --stash" >&2
             exit 1
@@ -1156,7 +1156,7 @@ PHP DevForge $(forge_version)
   forge status                 what is running, and how it is configured
 
   forge php list               the PHP versions, and which are installed
-  forge php on|off <version>   install one, or free the disk it uses
+  forge php on|off <version>   install a version, or stop serving it
   forge use <version>          set the default version (installs it if needed)
   forge run [-p V] [-C DIR] .. run a command in the PHP container
   forge shell [version]        open a shell in a PHP container

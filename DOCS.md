@@ -41,10 +41,15 @@ same place as the steps below, so carry on at step 3.
 
 1. **Clone the repository:**
    ```bash
-   git clone git@github.com:zelti/php-devforge.git
-   cd php-devforge
+   git clone git@github.com:zelti/php-devforge.git php-devforge-config
+   cd php-devforge-config
    ```
-    Clone it wherever you like: the scripts resolve their own location.
+    Clone it wherever you like -- the scripts resolve their own location --
+    with one exception: not into the folder your projects will live in, and not
+    inside it. That folder is bind-mounted as the whole web tree and filled with
+    `projects/` and `sites/`; this one is a git repository `forge update` pulls
+    into. The installer refuses the overlap, so the default name above keeps it
+    clear of the default projects folder, `~/php-devforge`.
 
 2. **Run the installer:**
    ```bash

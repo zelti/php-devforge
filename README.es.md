@@ -98,8 +98,8 @@ bash bootstrap.sh
 
 O clónalo tú mismo:
 ```bash
-git clone https://github.com/zelti/php-devforge.git
-cd php-devforge
+git clone https://github.com/zelti/php-devforge.git php-devforge-config
+cd php-devforge-config
 ./install.sh            # hace unas preguntas y deja todo listo
 forge start
 ```

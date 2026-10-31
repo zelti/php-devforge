@@ -190,6 +190,32 @@ jobs:
           test ! -f .env
           echo "the offered list is real and answerable"
 
+      # Reachable straight from the README: `git clone <url>` run from $HOME
+      # leaves the checkout at ~/php-devforge, which is also the default answer
+      # to "where will your projects live?". Accepting it mounted the repository
+      # as the whole web tree, with .env and its database password inside the
+      # document root, and left every project untracked in git.
+      - name: the projects folder cannot be this checkout
+        run: |
+          for dir in "$PWD" "$PWD/projects" "$(dirname "$PWD")"; do
+            if ./install.sh --yes --skip-dns --skip-cert --skip-link --skip-skill \
+                            --projects-dir="$dir" >/tmp/overlap.log 2>&1; then
+              echo "accepted a projects folder overlapping the checkout: $dir"
+              exit 1
+            fi
+            grep -q 'cannot live in the PHP DevForge checkout' /tmp/overlap.log \
+              || { cat /tmp/overlap.log; echo "^ refused $dir for the wrong reason"; exit 1; }
+            test ! -f .env
+          done
+          # A sibling sharing the prefix is the recommended layout, so comparing
+          # the paths as strings without the separator would refuse it.
+          ./install.sh --yes --skip-dns --skip-cert --skip-link --skip-skill \
+                       --projects-dir="$PWD-config" >/dev/null
+          grep -q "^PROJECTS_DIR=$PWD-config$" .env
+          rm -f .env .env.backup
+          rm -rf "$PWD-config"
+          echo "the checkout and the projects folder stay separate"
+
       # Task 32 shipped a broken prompt because CI only ever ran --yes, where the
       # questions are never asked. This presses the keys a person presses: a pty,
       # arrow/digit keys, space to toggle. The driver finds each option by reading

@@ -301,6 +301,48 @@ jobs:
           rm -f .env .env.backup
           echo "an old .env catches up, and a broken one is refused"
 
+      # `forge update` ended its run by reconciling .env with `./install.sh -y`,
+      # and -y answers the certificate and DNS prompts too (install.sh:130). So
+      # moving a checkout to the next release regenerated the HTTPS certificates
+      # and reconfigured the system resolver, asking for a password -- most of it
+      # to put a key in .env. migrate_env above keeps .env current on its own,
+      # so those two can be skipped.
+      #
+      # `forge update` itself is not run here: its first half checks out the
+      # latest release tag, which would replace the code under test. What is
+      # checked is the exact call it makes, and that the call needs no sudo.
+      - name: reconciling .env on update needs no sudo
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/nosudo
+          printf '#!/bin/sh\necho "sudo was called: $*" >&2\nexit 97\n' > /tmp/nosudo/sudo
+          chmod +x /tmp/nosudo/sudo
+
+          # Pinned, so the flags cannot quietly come back off.
+          grep -q '\./install\.sh -y --skip-cert --skip-dns' bin/forge \
+            || { echo "cmd_update no longer reconciles .env this way"; exit 1; }
+
+          # Falsified first: without the flags it does reach for sudo and stop.
+          # The runner has passwordless sudo, so a shim is what makes this the
+          # situation a person is in.
+          if PATH="/tmp/nosudo:$PATH" ./install.sh -y >/tmp/needs-sudo.log 2>&1; then
+            echo "install.sh -y finished without sudo -- this proves nothing"; exit 1
+          fi
+          grep -qi sudo /tmp/needs-sudo.log \
+            || { cat /tmp/needs-sudo.log; echo "^ it failed for some other reason"; exit 1; }
+
+          # And with them it goes all the way through, never calling it.
+          PATH="/tmp/nosudo:$PATH" ./install.sh -y --skip-cert --skip-dns \
+            >/tmp/no-sudo.log 2>&1 \
+            || { cat /tmp/no-sudo.log; echo "reconciling .env still needs sudo"; exit 1; }
+          if grep -q 'sudo was called' /tmp/no-sudo.log; then
+            cat /tmp/no-sudo.log; exit 1
+          fi
+
+          rm -rf /tmp/nosudo
+          rm -f .env .env.backup
+          echo "an update reconciles .env without asking for a password"
+
       # Task 32 shipped a broken prompt because CI only ever ran --yes, where the
       # questions are never asked. This presses the keys a person presses: a pty,
       # arrow/digit keys, space to toggle. The driver finds each option by reading

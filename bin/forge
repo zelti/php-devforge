@@ -444,7 +444,16 @@ cmd_update() {
 
     if [ -f .env ]; then
         info "Reconciling .env"
-        ./install.sh -y
+        # --skip-cert --skip-dns, because -y answers those two prompts as well
+        # (install.sh:130) and they are the ones that need sudo: an update was
+        # regenerating the HTTPS certificates and reconfiguring the system
+        # resolver in order to add a key to .env. migrate_env keeps .env
+        # current on its own now, so the installer is called here only for what
+        # it alone does -- recreating docker-compose.local.yml when it is gone,
+        # re-linking forge, refreshing the agent skill. Certificates and DNS
+        # follow DEV_DOMAIN, which an update does not change; `forge certs` and
+        # `forge dns setup` are there for when they really do need redoing.
+        ./install.sh -y --skip-cert --skip-dns
     fi
 
     echo ""

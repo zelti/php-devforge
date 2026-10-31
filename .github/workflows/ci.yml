@@ -222,9 +222,12 @@ jobs:
       # series and unnoticed for two releases, because docker-compose.yml
       # spells ${NGINX_FRONT_CONTROLLER:-auto} at the point of use.
       #
-      # The old file is derived, not described: the keys stripped are exactly
-      # the ones today's .env.example has and 0.1.0's did not, read out of git.
-      # So this keeps testing the real gap as more keys are added.
+      # The old file is derived, not described. The first try read the 0.1.0
+      # template out of git and died on `invalid object name` -- checkout is
+      # shallow. Deriving it from the code is better anyway: every key that is
+      # not an installer answer is a plain default, which is exactly the kind a
+      # release adds, and the list is ENV_ANSWER_KEYS itself. So a key added to
+      # either file is covered here without this step being touched.
       - name: an old .env is brought up to the example
         run: |
           set -euo pipefail
@@ -234,15 +237,19 @@ jobs:
           rm -f .env .env.backup
           ./install.sh --yes --skip-dns --skip-cert --skip-link --skip-skill >/dev/null
 
-          git show 7e05767:.env.example > /tmp/old-example
-          comm -13 <(keys /tmp/old-example | sort) <(keys .env.example | sort) > /tmp/new-keys
-          test -s /tmp/new-keys || { echo "nothing has been added since 0.1.0?"; exit 1; }
-          grep -qx NGINX_FRONT_CONTROLLER /tmp/new-keys
+          # The same list the code uses, so the two cannot disagree.
+          . ./lib/env.sh
+          defaults="$(for k in $(keys .env.example); do
+                        [ "$k" = FORGE_VERSION ] && continue
+                        printf '%s\n' "$ENV_ANSWER_KEYS" | grep -qxF "$k" || echo "$k"
+                      done)"
+          test -n "$defaults" || { echo "no default-valued keys to test with?"; exit 1; }
+          printf '%s\n' "$defaults" | grep -qx NGINX_FRONT_CONTROLLER
 
-          # This machine's real answers, with the keys of later releases taken
-          # out and the stamp put back -- plus two keys of the user's own.
+          # This machine's real answers, with every default-valued key taken out
+          # and the stamp put back -- plus two keys of the user's own.
           cp .env /tmp/old.env
-          while read -r k; do sed -i "/^$k=/d" /tmp/old.env; done < /tmp/new-keys
+          for k in $defaults; do sed -i "/^$k=/d" /tmp/old.env; done
           sed -i 's/^FORGE_VERSION=.*/FORGE_VERSION=0.1.0/' /tmp/old.env
           printf 'MINE_ONE=hola\nMINE_TWO=mundo\n' >> /tmp/old.env
           cp /tmp/old.env .env
@@ -251,12 +258,13 @@ jobs:
           forge status >/tmp/migrate.log 2>&1 || { cat /tmp/migrate.log; exit 1; }
           grep -q 'written by 0.1.0' /tmp/migrate.log \
             || { cat /tmp/migrate.log; echo "it did not say the file was old"; exit 1; }
-          grep -q 'NGINX_FRONT_CONTROLLER' /tmp/migrate.log \
-            || { cat /tmp/migrate.log; echo "it did not name the key it added"; exit 1; }
+          for k in $defaults; do
+            grep -q "$k" /tmp/migrate.log \
+              || { cat /tmp/migrate.log; echo "it did not name $k"; exit 1; }
+          done
 
-          # Every key the example declares is there, the stamp moved, the
-          # comment explaining the new key came with it, and the user's own
-          # values are byte for byte what they were.
+          # Every key the example declares is back, the stamp moved, the comment
+          # explaining one of them came with it, and the answers are untouched.
           while read -r k; do
             grep -q "^$k=" .env || { echo "missing after migration: $k"; exit 1; }
           done < <(keys .env.example)
@@ -267,13 +275,11 @@ jobs:
           grep -q '^MINE_TWO=mundo$' .env
           test -f .env.backup
           grep -q '^FORGE_VERSION=0.1.0$' .env.backup
-          while read -r k; do
-            # The stamp is the one value that has to move.
-            [ "$k" = FORGE_VERSION ] && continue
+          for k in $ENV_ANSWER_KEYS; do
             a="$(sed -ne "s/^$k=//p" /tmp/old.env | head -1)"
             b="$(sed -ne "s/^$k=//p" .env | head -1)"
             test "$a" = "$b" || { echo "$k changed: '$a' -> '$b'"; exit 1; }
-          done < <(keys /tmp/old.env)
+          done
 
           # Nothing to do the second time: no notice, and no rewrite.
           cp .env /tmp/after.env
@@ -292,7 +298,6 @@ jobs:
 
           rm -f .env .env.backup
           echo "an old .env catches up, and a broken one is refused"
-
 
       # Task 32 shipped a broken prompt because CI only ever ran --yes, where the
       # questions are never asked. This presses the keys a person presses: a pty,

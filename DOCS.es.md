@@ -98,6 +98,12 @@ de `custom/`, que son tuyos y nunca se tocan) lo detiene en vez de arriesgarse a
 perderlo — `forge update --stash` lo lleva consigo, sin que tengas que escribir
 comandos de git tú mismo.
 
+Una clave que haya introducido un release llega sola, da igual cómo hayas traído el
+código nuevo — con `forge update` o con un `git pull` a secas. Cualquier comando
+`forge` compara tu `.env` contra `.env.example`, añade lo que falte junto con el
+comentario que lo explica, y te dice una vez qué claves añadió. Tus propias
+respuestas no se tocan nunca, y el fichero tal como estaba queda en `.env.backup`.
+
 Las imágenes de Docker se versionan aparte, con una etiqueta flotante que no
 las sigue automáticamente: `docker compose pull` si también quieres la más
 reciente.

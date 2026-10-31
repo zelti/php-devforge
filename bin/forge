@@ -19,6 +19,8 @@ cd "$FORGE_DIR"
 . ./lib/version.sh
 # shellcheck source=lib/skill.sh
 . ./lib/skill.sh
+# shellcheck source=lib/env.sh
+. ./lib/env.sh
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info() { echo -e "${GREEN}[OK]${NC} $1"; }
@@ -103,6 +105,10 @@ image_mode() {
 
 need_env() {
     [ -f .env ] || { err "No .env here. Run ./install.sh first."; exit 1; }
+    # Before ensure_php_profiles, so that one is reasoning about a .env whose
+    # shape is current. It is also the heuristic this starts to retire: a
+    # version to compare against is exactly what it had to do without.
+    migrate_env
     ensure_php_profiles
 }
 

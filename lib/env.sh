@@ -1,18 +1,26 @@
 # shellcheck shell=bash
 # Keeping .env in step with .env.example.
 #
-# `forge update` does reconcile .env -- by re-running `./install.sh -y`, which
-# also regenerates the certificates and reconfigures the system resolver, both
-# with sudo. That is a lot of machine for "this release added a key", and it
-# only covers people who update that way: a checkout moved with a plain
-# `git pull` never calls it.
+# `forge update` does reconcile .env, by re-running `./install.sh -y`. So this
+# is not a hole in that path: it is what makes the invariant hold whichever way
+# the code arrived, and what lets that path stop being a sledgehammer.
 #
-# One was. Its .env still read FORGE_VERSION=0.1.0 while forge printed 0.3.0,
-# with no NGINX_FRONT_CONTROLLER -- added during the 0.1.0 series and unnoticed
-# for two releases. It worked only because docker-compose.yml spells
-# `${NGINX_FRONT_CONTROLLER:-auto}` at the point of use, and that fallback is
-# the cost of having no migration: every new key needs one, at every use site,
-# forever. So this runs from need_env -- every command, no sudo, nothing
+# Two things follow from the installer being the only thing that reconciles:
+#
+#   - A checkout moved with a plain `git pull` never calls it, and that is a
+#     normal way to move a repository you also work on. A key a release added
+#     simply never appears, and nothing says so -- it keeps working only
+#     because docker-compose.yml spells `${NGINX_FRONT_CONTROLLER:-auto}` at
+#     the point of use. That fallback is the cost of having no migration: every
+#     new key needs one, at every use site, forever.
+#
+#   - `install.sh -y` also regenerates the certificates and reconfigures the
+#     system resolver, both with sudo, because `-y` answers those prompts too
+#     (install.sh:130). That is a lot of machine for "this release added a
+#     key", and `forge update` cannot stop doing it while it is the only thing
+#     keeping .env current.
+#
+# So this runs from need_env instead: every command, no sudo, nothing
 # restarted, and silent unless it actually added something.
 #
 # .env.example is the authoritative list: install.sh builds .env by sed-ing this

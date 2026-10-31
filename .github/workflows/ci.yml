@@ -215,12 +215,11 @@ jobs:
           rm -f .env .env.backup
           rm -rf "$PWD-config"
           echo "the checkout and the projects folder stay separate"
-      # `forge update` reconciles .env by re-running the whole installer, sudo
-      # and certificates included; a checkout moved with a plain `git pull`
-      # never calls it. One was: its .env read FORGE_VERSION=0.1.0 while forge
-      # printed 0.3.0, with no NGINX_FRONT_CONTROLLER -- added during the 0.1.0
-      # series and unnoticed for two releases, because docker-compose.yml
-      # spells ${NGINX_FRONT_CONTROLLER:-auto} at the point of use.
+      # Only the installer reconciles .env -- `forge update` re-runs
+      # `./install.sh -y` for it. A checkout moved with a plain `git pull`
+      # never does, so a key a release added never appears, and nothing says
+      # so: it keeps working only because docker-compose.yml spells
+      # ${NGINX_FRONT_CONTROLLER:-auto} at the point of use.
       #
       # The old file is derived, not described. The first try read the 0.1.0
       # template out of git and died on `invalid object name` -- checkout is

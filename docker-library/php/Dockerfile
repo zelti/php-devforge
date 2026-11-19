@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git sudo iproute2 openssh-client unzip rsync \
     xfonts-encodings xfonts-utils fontconfig libxrender1 \
     aspell aspell-en aspell-fr \
-    build-essential unixodbc-dev \
+    build-essential libtool unixodbc-dev \
     curl gnupg wget \
     vim nano less \
     cron apt-transport-https ca-certificates mailutils iputils-ping \
@@ -49,8 +49,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && docker-php-ext-install -j"$(nproc)" "$@" \
     && rm -rf /var/lib/apt/lists/*
 
-# Extensiones PECL
-RUN pecl install imagick redis apcu xdebug \
+# Third-party extensions, through PIE rather than pecl: the official images stop
+# shipping pecl/pear from PHP 8.6 (docker-library/php#1654), and one installer for
+# every version keeps this file to one path. PIE checks for libtoolize, hence
+# libtool above. --skip-enable-extension leaves enabling to us, so xdebug stays
+# off until the xdebug script turns it on.
+COPY --from=ghcr.io/php/pie:1-bin /pie /usr/local/bin/pie
+RUN pie install --no-interaction --skip-enable-extension \
+        imagick/imagick phpredis/phpredis apcu/apcu xdebug/xdebug \
     && docker-php-ext-enable imagick redis apcu
 
 # Instalar Composer

@@ -35,12 +35,36 @@ detect_anchor() {
 
 # Every NSS store on this machine. Firefox and Chrome do not read the system
 # one, so the CA has to be added -- and removed -- from each of these too.
+#
+# Firefox keeps its profiles in more than one place depending on version and
+# packaging: ~/.mozilla/firefox is the classic one, recent releases on Linux
+# use the XDG path under ~/.config, and Ubuntu's snap its own. Looking only in
+# the first skipped the others without a word (#49).
 nss_dbs() {
-    [ -d "$HOME/.pki/nssdb" ] && echo "$HOME/.pki/nssdb"
-    for profile in "$HOME"/.mozilla/firefox/*/; do
-        [ -e "${profile}cert9.db" ] && echo "${profile%/}"
+    [ -e "$HOME/.pki/nssdb/cert9.db" ] && echo "$HOME/.pki/nssdb"
+    local base profile
+    for base in "$HOME/.mozilla/firefox" \
+                "${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/firefox" \
+                "$HOME/snap/firefox/common/.mozilla/firefox"; do
+        for profile in "$base"/*/; do
+            [ -e "${profile}cert9.db" ] && echo "${profile%/}"
+        done
     done
     return 0
+}
+
+# Chrome and Chromium on Linux read ~/.pki/nssdb, but nothing creates it until
+# something stores a certificate there -- so on a fresh machine it did not
+# exist, nss_dbs() did not list it, and Chrome was skipped while the script
+# still said "Done" (#49). Created empty here, which is what Chrome would do
+# itself on first use. Linux only: Chrome on macOS reads the system keychain.
+ensure_chrome_db() {
+    [ "$(uname -s)" = Linux ] || return 0
+    local db="$HOME/.pki/nssdb"
+    [ -e "$db/cert9.db" ] && return 0
+    mkdir -p "$db"
+    certutil -N -d "sql:$db" --empty-password >/dev/null 2>&1 \
+        || echo "   ⚠️  Could not create $db; Chrome will not trust the CA."
 }
 
 del_from_nss() {
@@ -221,16 +245,26 @@ add_to_nss() {
     certutil -D -n "$NSS_NICKNAME" -d "sql:$db" >/dev/null 2>&1 || true
     if certutil -A -n "$NSS_NICKNAME" -t "C,," -d "sql:$db" -i "$CA_FILE" >/dev/null 2>&1; then
         echo "   ✅ $db"
+        added=$((added + 1))
+    else
+        echo "   ⚠️  Could not add it to $db"
     fi
 }
 
 if command -v certutil >/dev/null 2>&1; then
     echo "🌐 Adding the CA to browsers (Firefox / Chrome)..."
+    ensure_chrome_db
+    added=0
     while read -r db; do
         [ -n "$db" ] && add_to_nss "$db"
     done <<EOF
 $(nss_dbs)
 EOF
+    # Saying "Done" after touching no browser is how #49 went unnoticed.
+    if [ "$added" -eq 0 ]; then
+        echo "   ⚠️  No browser store was updated. If Firefox has never been opened,"
+        echo "      open it once and run this again: forge certs"
+    fi
 else
     echo "🌐 certutil is not installed: skipping Firefox/Chrome."
     echo "   If you use Firefox, install 'nss' (Arch) or 'libnss3-tools' (Debian) and run again."

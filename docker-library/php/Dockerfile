@@ -105,4 +105,12 @@ RUN chmod +x /usr/local/bin/xdebug \
 
 COPY config_files/docker-php-ext-xdebug.ini "/usr/local/etc/php/mods-available/docker-php-ext-xdebug.ini"
 
+# forge's own PHP settings: the tunnel URL rewrite (forge.d/tunnel.ini and the
+# script it prepends). In the image, not bind-mounted from the checkout: the ini
+# names the script, and a mount let the two drift apart -- a branch switch that
+# deleted and recreated the folder left running containers pointing at a gone
+# directory, and every PHP request died on "Failed opening required". Shipped
+# together here, they cannot. Listed in PHP_INI_SCAN_DIR by php-base.yml.
+COPY forge.d/ /usr/local/etc/php/forge.d/
+
 WORKDIR /home/php-devforge

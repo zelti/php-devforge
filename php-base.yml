@@ -15,9 +15,6 @@ services:
       - dataphp-devforge:/home/php-devforge
       - ${PROJECTS_DIR:-/home/php-devforge/public_html}:/home/php-devforge/public_html
       - ./.caroot:/caroot:ro
-      # forge's own PHP settings, kept out of the image so a change does not
-      # mean a rebuild: today only the tunnel URL rewrite (forge.d/tunnel.ini).
-      - ./docker-library/php/forge.d:/usr/local/etc/php/forge.d:ro
       # Settings for every version. Each service adds ./custom/<version> on top,
       # mounted at /usr/local/etc/php/version, which wins over this one.
       - ./custom/php.d:/usr/local/etc/php/custom.d:ro
@@ -25,8 +22,10 @@ services:
       - PHP_XDEBUG=${XDEBUG_ENABLE}
       - XDEBUG_IDKEY=${XDEBUG_IDKEY}
       # Read left to right, so the version folder overrides the shared one, and
-      # both override forge.d and the image's own conf.d -- where the Xdebug toggle lives.
-      # A folder that does not exist is skipped without complaint.
+      # both override the image's own conf.d -- where the Xdebug toggle lives --
+      # and forge.d, baked into the image too (the tunnel URL rewrite). A folder
+      # that does not exist is skipped without complaint, so an older image
+      # without forge.d simply runs without the rewrite.
       - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/usr/local/etc/php/forge.d:/usr/local/etc/php/custom.d:/usr/local/etc/php/version/php.d
       # Files created in the container end up owned by this uid/gid on the host.
       - PUID=${PUID:-1000}

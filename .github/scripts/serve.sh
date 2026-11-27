@@ -71,3 +71,35 @@ serve() { # host, path -> body on stdout, empty when it never answered
     rm -f "$body" "$err"
     printf '%s' "$out"
 }
+
+# A request the way cloudflared sends one through `forge tunnel`: the public
+# host in the Host header, the local name forge gave it (originServerName) as
+# the TLS SNI. The app here stores its local URL, like WordPress does, and the
+# tunnel has to hand back the public one -- in the body, in Location -- while
+# a plain local request keeps its own. Cleans up after itself.
+tunnel_rewrites() {
+    local dir pub=ci-tunnel.example.com loc=welcome--sites.phpforge.dev
+    dir="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
+    mkdir -p "$dir/.tunnel"
+    ln -sfn ../sites/welcome "$dir/.tunnel/$pub"
+    printf '<?php if (isset($_GET["r"])) { header("Location: https://%s/home"); exit; }\necho "<a href=\\"https://%s/x\\">x</a>";' \
+        "$loc" "$loc" > "$dir/sites/welcome/tunnel-ci.php"
+
+    local ok=1
+    curl -fsS -k --max-time 10 --resolve "$loc:443:127.0.0.1" -H "Host: $pub" \
+        "https://$loc/tunnel-ci.php" > /tmp/tunnel-body.txt || ok=0
+    grep -q "https://$pub/x" /tmp/tunnel-body.txt \
+        || { echo "body not rewritten:"; cat /tmp/tunnel-body.txt; ok=0; }
+    curl -sS -k --max-time 10 -o /dev/null -D /tmp/tunnel-head.txt \
+        --resolve "$loc:443:127.0.0.1" -H "Host: $pub" \
+        "https://$loc/tunnel-ci.php?r=1" || ok=0
+    grep -qi "^location: https://$pub/home" /tmp/tunnel-head.txt \
+        || { echo "Location not rewritten:"; cat /tmp/tunnel-head.txt; ok=0; }
+    curl -fsS -k --max-time 10 --resolve "$loc:443:127.0.0.1" \
+        "https://$loc/tunnel-ci.php" > /tmp/tunnel-body.txt || ok=0
+    grep -q "https://$loc/x" /tmp/tunnel-body.txt \
+        || { echo "a local request was rewritten:"; cat /tmp/tunnel-body.txt; ok=0; }
+
+    rm -f "$dir/.tunnel/$pub" "$dir/sites/welcome/tunnel-ci.php" /tmp/tunnel-*.txt
+    [ "$ok" = 1 ]
+}

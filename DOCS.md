@@ -376,6 +376,19 @@ public name as a site of its own for as long as the tunnel is up, in a `.tunnel/
 folder beside `sites/`, and sweeps it on the way out — including after a window
 closed the hard way. The app sees the address the visitor actually used.
 
+**An app that stores its own URL is rewritten on the way out.** The `Host` alone
+fixes every app that builds links from the request — Laravel, Symfony. It does not
+fix one that keeps its address in the database, like WordPress with its `home` and
+`siteurl`: every link, image and redirect still says `my-app.phpforge.dev`. So on a
+tunnel request, and only then, PHP runs a small script first
+(`docker-library/php/forge.d/tunnel-prepend.php`) that swaps `//my-app.phpforge.dev`
+for the public name in the response body and in redirect headers, and for WordPress
+filters `home`/`siteurl` too, so its canonical redirect stops sending the phone
+home. Local requests and the command line never run it. Two limits: PHP allows one
+`auto_prepend_file`, so a project that sets its own in `custom/php.d` turns this
+off for itself; and a `wp-config.php` that hard-codes `WP_HOME` to the local name
+wins over the filter.
+
 ## 🌐 Local DNS
 
 The installer offers to set this up. It routes **only** your development domain to

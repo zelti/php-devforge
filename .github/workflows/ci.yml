@@ -883,6 +883,13 @@ jobs:
             https://welcome--sites.phpforge.dev/auth.php)"
           test "$got" = "Bearer ci-token" || { echo "got '$got'"; exit 1; }
 
+      # WordPress keeps its local URL in the database, so through a tunnel every
+      # link and redirect pointed at a name a phone cannot reach.
+      - name: a tunnel request gets its stored local URL rewritten
+        run: |
+          . .github/scripts/serve.sh
+          tunnel_rewrites
+
       - name: hidden .php files are not served
         run: |
           DIR="$(grep '^PROJECTS_DIR=' .env | cut -d= -f2-)"
@@ -1124,6 +1131,8 @@ jobs:
           serves my-app--sites          "PHP 8.4"
           serves my-app--sites--p83     "PHP 8.3"
           serves my-app--sites--p85     "PHP 8.5"
+          # Same tunnel URL rewrite, through the nginx Lua instead of Apache's.
+          tunnel_rewrites
           # nginx cannot read .htaccess, so a framework normally 404s on every URL
           # but its home page. The Lua reads the one rule that matters, and the
           # three project types have to keep their own behaviour: an app routes,

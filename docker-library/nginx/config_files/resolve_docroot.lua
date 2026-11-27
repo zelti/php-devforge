@@ -138,6 +138,15 @@ if not path_only and host:match("^[%w%.%-]+$") and not host:find("%.%.") then
     local alias = BASE .. "/.tunnel/" .. host
     if is_dir(alias) then
         tunnel_docroot = alias
+        -- The local name the app knows itself by, for tunnel-prepend.php to
+        -- rewrite from. Same source and same guard as the Apache side: the SNI
+        -- forge has cloudflared present (originServerName), believed only
+        -- under dev_domain.
+        local sni = ngx.var.ssl_server_name
+        if sni and sni:match("^[%w%.%-]+$") and not sni:find("%.%.")
+                and sni:match("%." .. domain .. "$") then
+            ngx.var.tunnel_origin = sni:lower()
+        end
         -- No --pNN is possible on a tunnel's own hostname, so a version
         -- pinned with `forge tunnel ... --php` lives in a same-named file
         -- next to the alias instead.

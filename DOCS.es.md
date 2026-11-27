@@ -390,6 +390,20 @@ nombre público como un sitio más mientras el túnel vive, en una carpeta
 `.tunnel/` al lado de `sites/`, y la barre al salir — también después de cerrar
 la ventana a lo bruto. La app ve la dirección que el visitante usó de verdad.
 
+**Una app que guarda su propia URL se reescribe a la salida.** Con el `Host` basta
+para toda app que arma sus enlaces desde la petición — Laravel, Symfony. No basta
+para una que guarda su dirección en la base, como WordPress con `home` y
+`siteurl`: cada enlace, imagen y redirección sigue diciendo `mi-app.phpforge.dev`.
+Por eso, en una petición que llega por el túnel, y solo entonces, PHP ejecuta antes
+un script pequeño (`docker-library/php/forge.d/tunnel-prepend.php`) que cambia
+`//mi-app.phpforge.dev` por el nombre público en el cuerpo de la respuesta y en las
+cabeceras de redirección, y en WordPress además filtra `home`/`siteurl`, para que
+su redirección canónica deje de mandar el teléfono de vuelta al dominio local. Las
+peticiones locales y la línea de comandos nunca lo ejecutan. Dos límites: PHP admite
+un solo `auto_prepend_file`, así que un proyecto que define el suyo en
+`custom/php.d` apaga esto para sí mismo; y un `wp-config.php` que fija `WP_HOME` al
+nombre local gana sobre el filtro.
+
 ## 🌐 DNS local
 
 El instalador ofrece configurarlo. Enruta **solo** tu dominio de desarrollo al dnsmasq

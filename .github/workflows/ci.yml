@@ -701,7 +701,7 @@ jobs:
           # The whole design rests on that, so it is asserted directly.
           n="$(COMPOSE_PROFILES='*' docker compose config --format json \
                | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["services"]["php85dev"]["volumes"]))')"
-          test "$n" = 5 || { echo "php85dev has $n volumes, expected 5"; exit 1; }
+          test "$n" = 6 || { echo "php85dev has $n volumes, expected 6"; exit 1; }
 
           printf 'memory_limit = 333M\n' > custom/php.d/99-ci.ini
           printf 'memory_limit = 444M\n' > custom/8.3/php.d/99-ci.ini
@@ -882,6 +882,13 @@ jobs:
             --resolve welcome--sites.phpforge.dev:443:127.0.0.1 \
             https://welcome--sites.phpforge.dev/auth.php)"
           test "$got" = "Bearer ci-token" || { echo "got '$got'"; exit 1; }
+
+      # WordPress keeps its local URL in the database, so through a tunnel every
+      # link and redirect pointed at a name a phone cannot reach.
+      - name: a tunnel request gets its stored local URL rewritten
+        run: |
+          . .github/scripts/serve.sh
+          tunnel_rewrites
 
       - name: hidden .php files are not served
         run: |
@@ -1124,6 +1131,8 @@ jobs:
           serves my-app--sites          "PHP 8.4"
           serves my-app--sites--p83     "PHP 8.3"
           serves my-app--sites--p85     "PHP 8.5"
+          # Same tunnel URL rewrite, through the nginx Lua instead of Apache's.
+          tunnel_rewrites
           # nginx cannot read .htaccess, so a framework normally 404s on every URL
           # but its home page. The Lua reads the one rule that matters, and the
           # three project types have to keep their own behaviour: an app routes,

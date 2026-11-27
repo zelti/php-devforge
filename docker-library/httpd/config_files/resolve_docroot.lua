@@ -47,6 +47,21 @@ local function safe_host(host)
     return host:match("^[%w%.%-]+$") ~= nil and not host:find("%.%.")
 end
 
+-- The local name behind a tunnel request, or nil when this is not one. Only a
+-- host with a .tunnel/ alias qualifies -- the same check silly_mapper uses to
+-- serve it -- and only an SNI under DEV_DOMAIN is believed, so the most a
+-- crafted handshake could do is name a different local site to rewrite from.
+local function tunnel_origin(r, host, dev_domain)
+    if host:match("%." .. dev_domain:gsub("%.", "%%.") .. "$") or not safe_host(host) then
+        return nil
+    end
+    if not is_dir("/home/php-devforge/public_html/.tunnel/" .. host) then return nil end
+    local ok, sni = pcall(function() return r:ssl_var_lookup("SSL_TLS_SNI") end)
+    if not ok or not sni or sni == "" or not safe_host(sni) then return nil end
+    if not sni:match("%." .. dev_domain:gsub("%.", "%%.") .. "$") then return nil end
+    return sni:lower()
+end
+
 -- Answered from the translate-name hook, not from set_php_handler: a "/" reaches
 -- PHP through mod_dir's DirectoryIndex, whose internal redirect throws away a body
 -- written that late -- the request ends as an empty 200 on a directory. Translate
@@ -212,6 +227,19 @@ function set_php_handler(r)
             ver = f:read("*l")
             f:close()
         end
+    end
+
+    -- Tells PHP this request came through a tunnel, and under which local
+    -- name the app knows itself -- so tunnel-prepend.php can rewrite the
+    -- stored base URL some apps (WordPress) put in every link and redirect.
+    -- The local name is the SNI cloudflared presents: forge sets it to
+    -- <name>.<DEV_DOMAIN> on every tunnel (originServerName), so nothing new
+    -- is stored and tunnels made before this keep working. Set here, in the
+    -- fixup, rather than in translate-name: an internal redirect (mod_dir,
+    -- a front controller's .htaccess) renames earlier env vars to REDIRECT_*.
+    local origin = tunnel_origin(r, host, dev_domain)
+    if origin then
+        r.subprocess_env["FORGE_TUNNEL_ORIGIN"] = origin
     end
 
     ver = ver or os.getenv("PHP_VERSION")

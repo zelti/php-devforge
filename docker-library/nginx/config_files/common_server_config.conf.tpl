@@ -15,6 +15,9 @@ set $front_controller "";
 # cannot take an empty item, so "nothing declared" is a path that never exists.
 set $front_file "/__no_front_file__";
 set $fc_mode "${NGINX_FRONT_CONTROLLER}";
+# The local name behind a tunnel request, filled by the Lua; empty otherwise.
+# Handed to PHP as FORGE_TUNNEL_ORIGIN for tunnel-prepend.php.
+set $tunnel_origin "";
 
 rewrite_by_lua_file /etc/nginx/lua/resolve_docroot.lua;
 
@@ -54,6 +57,7 @@ location @front_php {
     fastcgi_param SCRIPT_FILENAME $document_root/$front_controller;
     fastcgi_param SCRIPT_NAME /$front_controller;
     fastcgi_param HTTP_AUTHORIZATION $http_authorization;
+    fastcgi_param FORGE_TUNNEL_ORIGIN $tunnel_origin;
 }
 
 location ~ \.php$ {
@@ -76,4 +80,5 @@ location ~ \.php$ {
     fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
     # nginx does not forward Authorization to FastCGI on its own either.
     fastcgi_param HTTP_AUTHORIZATION $http_authorization;
+    fastcgi_param FORGE_TUNNEL_ORIGIN $tunnel_origin;
 }

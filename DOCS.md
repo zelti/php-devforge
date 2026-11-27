@@ -688,7 +688,7 @@ block and the blank line before it, leaving the rest of the file untouched.
 
 ## 🛠️ Supported PHP Extensions and Tools
 
-**PHP extensions:** GD, Intl, Zip, PDO MySQL, PDO PostgreSQL, SOAP, XSL, BC Math,
+**PHP extensions:** GD, Intl, Zip, MySQLi, PDO MySQL, PDO PostgreSQL, SOAP, XSL, BC Math,
 OPcache, Mbstring, Exif, PCNTL, Imagick, Redis, APCu, Xdebug
 
 **Tools:** Composer, Node.js 24 LTS via NVM, pnpm, Git, Cron

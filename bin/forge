@@ -796,10 +796,30 @@ tunnel_uuid() {
 # One tunnel serves every site; the ingress rules inside it are what route each
 # hostname. A second tunnel would mean a second connection to Cloudflare for no
 # gain.
+#
+# The tunnel living in your account is not enough: cloudflared also needs its
+# credentials file in ~/.cloudflared, and that file is only written by
+# `tunnel create`. A tunnel made on another machine, or before ~/.cloudflared
+# was wiped and `forge tunnel login` run again, exists with no credentials
+# here -- and the background service then restart-loops on "credentials file
+# doesn't exist" while Cloudflare answers 1033. `tunnel token --cred-file`
+# fetches them again for the existing tunnel, so nothing is deleted.
 tunnel_ensure() {
-    [ -n "$(tunnel_uuid)" ] && return 0
-    info "Creating the '${TUNNEL_NAME}' tunnel in your Cloudflare account"
-    tunnel_cf tunnel create "$TUNNEL_NAME"
+    local uuid; uuid="$(tunnel_uuid)"
+    if [ -z "$uuid" ]; then
+        info "Creating the '${TUNNEL_NAME}' tunnel in your Cloudflare account"
+        tunnel_cf tunnel create "$TUNNEL_NAME"
+        return
+    fi
+    [ -f "${CLOUDFLARED_HOME}/${uuid}.json" ] && return 0
+    info "The '${TUNNEL_NAME}' tunnel has no credentials on this machine; fetching them"
+    tunnel_cf tunnel token --cred-file "/home/nonroot/.cloudflared/${uuid}.json" "$TUNNEL_NAME" >/dev/null
+    [ -f "${CLOUDFLARED_HOME}/${uuid}.json" ] || {
+        err "Could not fetch the credentials for '${TUNNEL_NAME}'."
+        echo "  Tunnels created before cloudflared 2022.3.0 cannot be recovered this way:" >&2
+        echo "  delete it in the Cloudflare dashboard, then run forge tunnel add again." >&2
+        exit 1
+    }
 }
 
 # Rewritten whole on every add and rm. Ingress is an ordered list whose last
@@ -1086,6 +1106,7 @@ cmd_tunnel() {
                 # rewrite the web server may have changed since still needs a
                 # restart to actually reach the running container.
                 local was_on=0; is_on tunnel && was_on=1
+                tunnel_ensure
                 tunnel_write_config
                 cmd_profile on tunnel
                 [ "$was_on" = 1 ] && docker compose restart cloudflared >/dev/null

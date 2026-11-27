@@ -745,6 +745,16 @@ jobs:
             echo "$s ok"
           done
 
+      # WordPress refuses to start without mysqli ("missing the MySQL extension"),
+      # and pdo_mysql does not stand in for it. It went missing once; keep it here.
+      - name: mysqli is present in every version
+        run: |
+          for s in php83dev php84dev php85dev; do
+            got="$(docker compose exec -T "$s" php -r 'echo function_exists("mysqli_connect") ? "yes" : "no";')"
+            test "$got" = "yes" || { echo "$s: mysqli missing"; exit 1; }
+            echo "$s ok"
+          done
+
       # This one leaked source for every request that did not go through
       # DirectoryIndex. Guard it so it cannot come back.
       - name: PHP source is never served as text

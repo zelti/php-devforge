@@ -698,7 +698,7 @@ en blanco de antes, dejando el resto del archivo intacto.
 
 ## 🛠️ Extensiones y herramientas
 
-**Extensiones de PHP:** GD, Intl, Zip, PDO MySQL, PDO PostgreSQL, SOAP, XSL, BC Math,
+**Extensiones de PHP:** GD, Intl, Zip, MySQLi, PDO MySQL, PDO PostgreSQL, SOAP, XSL, BC Math,
 OPcache, Mbstring, Exif, PCNTL, Imagick, Redis, APCu, Xdebug
 
 **Herramientas:** Composer, Node.js 24 LTS vía NVM, pnpm, Git, Cron

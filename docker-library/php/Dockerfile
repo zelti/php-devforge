@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # ship both (opcache enabled in conf.d, mbstring compiled into the binary via
     # --enable-mbstring). Asking for them recompiled them for nothing, and from
     # PHP 8.5 opcache produces no shared module at all, which failed the build.
-    && set -- gd intl zip pdo_mysql pdo_pgsql soap xsl bcmath exif pcntl \
+    && set -- gd intl zip mysqli pdo_mysql pdo_pgsql soap xsl bcmath exif pcntl \
     && docker-php-ext-install -j"$(nproc)" "$@" \
     && rm -rf /var/lib/apt/lists/*
 

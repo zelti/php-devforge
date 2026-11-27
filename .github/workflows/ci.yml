@@ -701,7 +701,7 @@ jobs:
           # The whole design rests on that, so it is asserted directly.
           n="$(COMPOSE_PROFILES='*' docker compose config --format json \
                | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["services"]["php85dev"]["volumes"]))')"
-          test "$n" = 5 || { echo "php85dev has $n volumes, expected 5"; exit 1; }
+          test "$n" = 6 || { echo "php85dev has $n volumes, expected 6"; exit 1; }
 
           printf 'memory_limit = 333M\n' > custom/php.d/99-ci.ini
           printf 'memory_limit = 444M\n' > custom/8.3/php.d/99-ci.ini
